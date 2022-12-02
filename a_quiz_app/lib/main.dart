@@ -13,12 +13,37 @@ void main() {
 }
 
 class AQuizApp extends StatelessWidget {
+  var questions = [
+    'Who is Harry Potter?',
+    'What is his BFFs\'s name?',
+  ];
+
+  void answerQuestion() {
+    print('Answer chosen.');
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),
-        body: Text('Lorem ipsum'),
+        body: Column(
+          children: [
+            Text('The questions:'),
+            ElevatedButton(
+              child: Text('Answer 1:'),
+              onPressed: answerQuestion,
+            ),
+            ElevatedButton(
+              child: Text('Answer 2:'),
+              onPressed: answerQuestion,
+            ),
+            ElevatedButton(
+              child: Text('Answer 3:'),
+              onPressed: answerQuestion,
+            ),
+          ],
+        ),
       ),
     );
   }
