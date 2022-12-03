@@ -12,14 +12,26 @@ void main() {
   print(o3.brand);
 }
 
-class AQuizApp extends StatelessWidget {
+class AQuizApp extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() {
+    return AQuizAppState();
+  }
+}
+
+class AQuizAppState extends State<AQuizApp> {
+  var questionIndex = 0;
+
   var questions = [
     'Who is Harry Potter?',
     'What is his BFFs\'s name?',
   ];
 
   void answerQuestion() {
-    print('Answer chosen.');
+    setState(() {
+      questionIndex++;
+    });
+    print(questionIndex);
   }
 
   @override
@@ -29,7 +41,7 @@ class AQuizApp extends StatelessWidget {
         appBar: AppBar(title: Text('A Quiz App')),
         body: Column(
           children: [
-            Text('The questions:'),
+            Text(questions[questionIndex]),
             ElevatedButton(
               child: Text('Answer 1:'),
               onPressed: answerQuestion,
