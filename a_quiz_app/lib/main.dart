@@ -15,45 +15,45 @@ void main() {
 class AQuizApp extends StatefulWidget {
   @override
   State<StatefulWidget> createState() {
-    return AQuizAppState();
+    return _AQuizAppState();
   }
 }
 
-class AQuizAppState extends State<AQuizApp> {
-  var questionIndex = 0;
+class _AQuizAppState extends State<AQuizApp> {
+  var _questionIndex = 0;
 
-  var questions = [
+  var _questions = [
     'Who is Harry Potter?',
     'What is his BFFs\'s name?',
   ];
 
-  var choices = [
+  var _choices = [
     ['A boy', 'A girl'],
     ['Dobby', 'Ron', 'Draco'],
   ];
 
   void answerQuestion() {
     setState(() {
-      questionIndex++;
+      _questionIndex++;
     });
-    print(questionIndex);
+    print(_questionIndex);
   }
 
   @override
   Widget build(BuildContext context) {
     List<Widget> choiceButtons = [];
-    for (var choice in choices[questionIndex]) {
+    for (var choice in _choices[_questionIndex]) {
       choiceButtons.add(ElevatedButton(
         child: Text(choice),
         onPressed: () {
           print(choice);
           setState(() {
-            questionIndex++;
+            _questionIndex++;
           });
         },
       ));
     }
-    Widget questionTitle = Text(questions[questionIndex]);
+    Widget questionTitle = Text(_questions[_questionIndex]);
     List<Widget> questionLayout = [questionTitle] + choiceButtons;
 
     return MaterialApp(
@@ -63,10 +63,10 @@ class AQuizAppState extends State<AQuizApp> {
           children: questionLayout,
           /*
           [
-            Text(questions[questionIndex]),
+            Text(_questions[_questionIndex]),
             ElevatedButton(
               child: Text('Answer 1:'),
-              onPressed: answerQuestion,
+              onPressed: _answerQuestion,
             ),
             ElevatedButton(
               child: Text('Answer 2:'),
