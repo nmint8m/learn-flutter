@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 class QuestionTitle extends StatelessWidget {
 
-  String questionString;
+  final String questionString;
 
   QuestionTitle(this.questionString);
 
