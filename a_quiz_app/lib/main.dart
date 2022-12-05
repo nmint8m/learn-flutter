@@ -27,6 +27,11 @@ class AQuizAppState extends State<AQuizApp> {
     'What is his BFFs\'s name?',
   ];
 
+  var choices = [
+    ['A boy', 'A girl'],
+    ['Dobby', 'Ron', 'Draco'],
+  ];
+
   void answerQuestion() {
     setState(() {
       questionIndex++;
@@ -36,11 +41,28 @@ class AQuizAppState extends State<AQuizApp> {
 
   @override
   Widget build(BuildContext context) {
+    List<Widget> choiceButtons = [];
+    for (var choice in choices[questionIndex]) {
+      choiceButtons.add(ElevatedButton(
+        child: Text(choice),
+        onPressed: () {
+          print(choice);
+          setState(() {
+            questionIndex++;
+          });
+        },
+      ));
+    }
+    Widget questionTitle = Text(questions[questionIndex]);
+    List<Widget> questionLayout = [questionTitle] + choiceButtons;
+
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),
         body: Column(
-          children: [
+          children: questionLayout,
+          /*
+          [
             Text(questions[questionIndex]),
             ElevatedButton(
               child: Text('Answer 1:'),
@@ -57,6 +79,7 @@ class AQuizAppState extends State<AQuizApp> {
               },
             ),
           ],
+          */
         ),
       ),
     );
