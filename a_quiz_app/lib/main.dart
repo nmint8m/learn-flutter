@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'example.dart';
+import 'custom-widgets/question-title.dart';
 
 void main() {
   runApp(AQuizApp());
@@ -41,6 +42,8 @@ class _AQuizAppState extends State<AQuizApp> {
 
   @override
   Widget build(BuildContext context) {
+    Widget questionTitle = QuestionTitle(_questions[_questionIndex]);
+
     List<Widget> choiceButtons = [];
     for (var choice in _choices[_questionIndex]) {
       choiceButtons.add(ElevatedButton(
@@ -53,7 +56,7 @@ class _AQuizAppState extends State<AQuizApp> {
         },
       ));
     }
-    Widget questionTitle = Text(_questions[_questionIndex]);
+
     List<Widget> questionLayout = [questionTitle] + choiceButtons;
 
     return MaterialApp(
