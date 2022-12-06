@@ -53,6 +53,7 @@ class _AQuizAppState extends State<AQuizApp> {
     List<Widget> choiceButtons = [];
     for (var choice in _choices[_questionIndex]) {
       choiceButtons.add(ElevatedButton(
+        style: ButtonStyle(backgroundColor: MaterialStateProperty.all(Colors.green),),
         child: Text(choice),
         onPressed: () {
           print(choice);
