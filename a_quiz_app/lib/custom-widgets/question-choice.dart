@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+typedef StringCallback = void Function(String);
+
 class QuestionChoice extends StatelessWidget {
   final String choice;
   
   // Passing callback functions arround
+  // final Function selectHandler;
   // final VoidCallback selectHandler; // More specific void callback function than Function
-  final Function selectHandler;
+  final StringCallback selectHandler;
 
   QuestionChoice(this.choice, this.selectHandler);
 
@@ -20,7 +23,7 @@ class QuestionChoice extends StatelessWidget {
         ),
         child: Text(choice),
         onPressed: () {
-          selectHandler();
+          selectHandler(choice);
         },
       ),
     );

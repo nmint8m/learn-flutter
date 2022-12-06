@@ -31,6 +31,22 @@ class _AQuizAppState extends State<AQuizApp> {
   var _questionIndex = 0;
 
   var _questions = [
+    {
+      'question': 'Who is Harry Potter?',
+      'choices': ['A boy', 'A girl'],
+    },
+    {
+      'question': 'What is his BFFs\'s name?',
+      'choices': ['Dobby', 'Ron', 'Draco'],
+    },
+    {
+      'question': 'What is Voldermort\'s real name?',
+      'choices': ['Hermione Granger', 'Lucius Malfoy', 'Tom Riddle'],
+    },
+  ];
+
+  /*
+  var _questions = [
     'Who is Harry Potter?',
     'What is his BFFs\'s name?',
   ];
@@ -39,20 +55,22 @@ class _AQuizAppState extends State<AQuizApp> {
     ['A boy', 'A girl'],
     ['Dobby', 'Ron', 'Draco'],
   ];
+  */
 
-  void _answerQuestion() {
+  void _answerQuestion(String answer) {
     setState(() {
       _questionIndex++;
     });
-    print(_questionIndex);
+    print('Selected answer: $answer');
+    print('Next question: $_questionIndex');
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget questionTitle = QuestionTitle(_questions[_questionIndex]);
+    Widget questionTitle = QuestionTitle(_questions[_questionIndex]['question']);
 
     List<Widget> choiceButtons = [];
-    for (var choice in _choices[_questionIndex]) {
+    for (var choice in _questions[_questionIndex]['choices']) {
       choiceButtons.add(QuestionChoice(choice, _answerQuestion));
       /*
       choiceButtons.add(ElevatedButton(
