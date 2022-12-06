@@ -67,8 +67,16 @@ class _AQuizAppState extends State<AQuizApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Build question title
     Widget questionTitle = QuestionTitle(_questions[_questionIndex]['question']);
 
+    // Build question choices
+    List<String> choices =
+        _questions[_questionIndex]['choices'] as List<String>;
+    List<Widget> choiceButtons = choices.map((choice) {
+      return QuestionChoice(choice, _answerQuestion);
+    }).toList();
+    /*
     List<Widget> choiceButtons = [];
     for (var choice in _questions[_questionIndex]['choices']) {
       choiceButtons.add(QuestionChoice(choice, _answerQuestion));
@@ -83,8 +91,9 @@ class _AQuizAppState extends State<AQuizApp> {
       ));
       */
     }
+    */
 
-    List<Widget> questionLayout = [questionTitle] + choiceButtons;
+    List<Widget> questionLayout = [questionTitle, ...choiceButtons];
 
     return MaterialApp(
       home: Scaffold(
