@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'example.dart';
 import 'custom-widgets/question-title.dart';
+import 'custom-widgets/question-choice.dart';
 
 void main() {
   runApp(AQuizApp());
@@ -39,7 +40,7 @@ class _AQuizAppState extends State<AQuizApp> {
     ['Dobby', 'Ron', 'Draco'],
   ];
 
-  void answerQuestion() {
+  void _answerQuestion() {
     setState(() {
       _questionIndex++;
     });
@@ -52,16 +53,17 @@ class _AQuizAppState extends State<AQuizApp> {
 
     List<Widget> choiceButtons = [];
     for (var choice in _choices[_questionIndex]) {
+      choiceButtons.add(QuestionChoice(choice, _answerQuestion));
+      /*
       choiceButtons.add(ElevatedButton(
         style: ButtonStyle(backgroundColor: MaterialStateProperty.all(Colors.green),),
         child: Text(choice),
         onPressed: () {
           print(choice);
-          setState(() {
-            _questionIndex++;
-          });
+          _answerQuestion();
         },
       ));
+      */
     }
 
     List<Widget> questionLayout = [questionTitle] + choiceButtons;
@@ -71,7 +73,7 @@ class _AQuizAppState extends State<AQuizApp> {
         appBar: AppBar(title: Text('A Quiz App')),
         body: Column(
           children: questionLayout,
-          /*
+          /* // Named functions and Anonymous functions
           [
             Text(_questions[_questionIndex]),
             ElevatedButton(
