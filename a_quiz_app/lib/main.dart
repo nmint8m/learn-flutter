@@ -30,7 +30,7 @@ class AQuizApp extends StatefulWidget {
 class _AQuizAppState extends State<AQuizApp> {
   var _questionIndex = 0;
 
-  var _questions = [
+  final _questions = const [
     {
       'question': 'Who is Harry Potter?',
       'choices': ['A boy', 'A girl'],
@@ -58,9 +58,11 @@ class _AQuizAppState extends State<AQuizApp> {
   */
 
   void _answerQuestion(String answer) {
-    setState(() {
-      _questionIndex++;
-    });
+    if (_questionIndex < _questions.length - 1) {
+      setState(() {
+        _questionIndex++;
+      });
+    }
     print('Selected answer: $answer');
     print('Next question: $_questionIndex');
   }
@@ -68,7 +70,8 @@ class _AQuizAppState extends State<AQuizApp> {
   @override
   Widget build(BuildContext context) {
     // Build question title
-    Widget questionTitle = QuestionTitle(_questions[_questionIndex]['question']);
+    Widget questionTitle =
+        QuestionTitle(_questions[_questionIndex]['question']);
 
     // Build question choices
     List<String> choices =
