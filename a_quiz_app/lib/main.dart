@@ -4,13 +4,19 @@ import 'custom-widgets/question-title.dart';
 
 void main() {
   runApp(AQuizApp());
+  printSomeInfo();
+}
 
+void printSomeInfo() {
   var o1 = Person(age: 40, name: "Tam");
   print(o1.name);
   var o2 = Pet();
   print(o2.name);
   var o3 = Shoe(brand: 'UA', size: 38);
   print(o3.brand);
+  var o3l = Shoe.large('Nike');
+  print(o3l.brand);
+  print(o3l.size);
 }
 
 class AQuizApp extends StatefulWidget {

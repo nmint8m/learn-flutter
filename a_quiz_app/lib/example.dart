@@ -23,4 +23,8 @@ class Shoe {
   int size;
 
   Shoe({this.brand, this.size});
+
+  Shoe.large(this.brand) {
+    size = 50;
+  }
 }
