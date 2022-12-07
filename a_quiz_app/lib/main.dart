@@ -29,30 +29,45 @@ class AQuizApp extends StatefulWidget {
 
 class _AQuizAppState extends State<AQuizApp> {
   var _questionIndex = 0;
+  var _totalScore = 0;
 
   final _questions = const [
     {
       'question': 'Who is Harry Potter?',
-      'choices': ['A boy', 'A girl'],
+      'choices': [
+        {'text': 'A boy', 'score': 1},
+        {'text': 'A girl', 'score': 0},
+      ]
     },
     {
       'question': 'What is his BFFs\'s name?',
-      'choices': ['Dobby', 'Ron', 'Draco'],
+      'choices': [
+        {'text': 'Dobby', 'score': 0},
+        {'text': 'Ron', 'score': 1},
+        {'text': 'Draco', 'score': 0},
+      ],
     },
     {
       'question': 'What is Voldermort\'s real name?',
-      'choices': ['Hermione Granger', 'Lucius Malfoy', 'Tom Riddle'],
+      'choices': [
+        {'text': 'Hermione Granger', 'score': 0},
+        {'text': 'Lucius Malfoy', 'score': 0},
+        {'text': 'Tom Riddle', 'score': 1},
+      ],
     },
   ];
 
-  void _answerQuestion(String answer) {
+  void _answerQuestion(String answer, int score) {
+    _totalScore += score;
     if (_questionIndex < _questions.length) {
       setState(() {
         _questionIndex++;
       });
     }
     print('Selected answer: $answer');
+    print('Selected answer\'s score: $score');
     print('Next question: $_questionIndex');
+    print('Total score: $_totalScore');
   }
 
   @override
@@ -62,7 +77,7 @@ class _AQuizAppState extends State<AQuizApp> {
             questions: _questions,
             questionIndex: _questionIndex,
             answerQuestion: _answerQuestion)
-        : Answer();
+        : Answer(_totalScore, _questions.length);
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),

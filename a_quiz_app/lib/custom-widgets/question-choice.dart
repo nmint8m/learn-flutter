@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 
-typedef StringCallback = void Function(String);
+typedef ChoiceCallback = void Function(String, int);
 
 class QuestionChoice extends StatelessWidget {
-  final String choice;
+  final Map<String, Object> choice;
 
   // Passing callback functions arround
   // final Function selectHandler;
   // final VoidCallback selectHandler; // More specific void callback function than Function
-  final StringCallback selectHandler;
+  final ChoiceCallback selectHandler;
 
   QuestionChoice(this.choice, this.selectHandler);
 
   @override
   Widget build(BuildContext context) {
+    String text = choice['text'] as String;
+    int score = choice['score'] as int;
     return Container(
       width: double.infinity,
       margin: EdgeInsets.all(5),
@@ -21,9 +23,9 @@ class QuestionChoice extends StatelessWidget {
         style: ButtonStyle(
           backgroundColor: MaterialStateProperty.all(Colors.green),
         ),
-        child: Text(choice),
+        child: Text(text),
         onPressed: () {
-          selectHandler(choice);
+          selectHandler(text, score);
         },
       ),
     );

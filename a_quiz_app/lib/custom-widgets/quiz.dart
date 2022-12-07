@@ -5,7 +5,7 @@ import 'package:a_quiz_app/custom-widgets/question-choice.dart';
 class Quiz extends StatelessWidget {
   final List<Map<String, Object>> questions;
   final int questionIndex;
-  final StringCallback answerQuestion;
+  final ChoiceCallback answerQuestion;
 
   Quiz({
     required this.questions,
@@ -20,7 +20,7 @@ class Quiz extends StatelessWidget {
         QuestionTitle(questions[questionIndex]['question'] as String);
 
     // Build question choices
-    List<String> choices = questions[questionIndex]['choices'] as List<String>;
+    List<Map<String, Object>> choices = questions[questionIndex]['choices'] as List<Map<String, Object>>;
     List<Widget> choiceButtons = choices.map((choice) {
       return QuestionChoice(choice, answerQuestion);
     }).toList();
