@@ -71,7 +71,7 @@ class _AQuizAppState extends State<AQuizApp> {
   Widget build(BuildContext context) {
     // Build question title
     Widget questionTitle =
-        QuestionTitle(_questions[_questionIndex]['question']);
+        QuestionTitle(_questions[_questionIndex]['question'] as String);
 
     // Build question choices
     List<String> choices =
