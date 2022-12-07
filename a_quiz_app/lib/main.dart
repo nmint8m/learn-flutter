@@ -58,7 +58,7 @@ class _AQuizAppState extends State<AQuizApp> {
   */
 
   void _answerQuestion(String answer) {
-    if (_questionIndex < _questions.length - 1) {
+    if (_questionIndex < _questions.length) {
       setState(() {
         _questionIndex++;
       });
@@ -67,8 +67,7 @@ class _AQuizAppState extends State<AQuizApp> {
     print('Next question: $_questionIndex');
   }
 
-  @override
-  Widget build(BuildContext context) {
+  List<Widget> buildQuestionLayout() {
     // Build question title
     Widget questionTitle =
         QuestionTitle(_questions[_questionIndex]['question'] as String);
@@ -96,13 +95,36 @@ class _AQuizAppState extends State<AQuizApp> {
     }
     */
 
+    // Build question and choices layout
     List<Widget> questionLayout = [questionTitle, ...choiceButtons];
+    return questionLayout;
+  }
 
+  List<Widget> buildSubmittedLayout() {
+    List<Widget> submittedLayout = [
+      Container(
+        width: double.infinity,
+        margin: EdgeInsets.all(5),
+        child: Text(
+          'Answers submitted!',
+          style: TextStyle(fontSize: 28),
+          textAlign: TextAlign.center,
+        ),
+      )
+    ];
+    return submittedLayout;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List<Widget> childrenLayout = _questionIndex < _questions.length
+        ? buildQuestionLayout()
+        : buildSubmittedLayout();
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),
         body: Column(
-          children: questionLayout,
+          children: childrenLayout,
           /* // Named functions and Anonymous functions
           [
             Text(_questions[_questionIndex]),
