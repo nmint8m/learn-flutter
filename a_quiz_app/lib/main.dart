@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'example.dart';
-import 'custom-widgets/question-title.dart';
-import 'custom-widgets/question-choice.dart';
+import 'package:a_quiz_app/example.dart';
+import 'package:a_quiz_app/custom-widgets/quiz.dart';
+import 'package:a_quiz_app/custom-widgets/answer.dart';
 
 void main() {
   runApp(AQuizApp());
@@ -45,18 +45,6 @@ class _AQuizAppState extends State<AQuizApp> {
     },
   ];
 
-  /*
-  var _questions = [
-    'Who is Harry Potter?',
-    'What is his BFFs\'s name?',
-  ];
-
-  var _choices = [
-    ['A boy', 'A girl'],
-    ['Dobby', 'Ron', 'Draco'],
-  ];
-  */
-
   void _answerQuestion(String answer) {
     if (_questionIndex < _questions.length) {
       setState(() {
@@ -67,65 +55,19 @@ class _AQuizAppState extends State<AQuizApp> {
     print('Next question: $_questionIndex');
   }
 
-  List<Widget> buildQuestionLayout() {
-    // Build question title
-    Widget questionTitle =
-        QuestionTitle(_questions[_questionIndex]['question'] as String);
-
-    // Build question choices
-    List<String> choices =
-        _questions[_questionIndex]['choices'] as List<String>;
-    List<Widget> choiceButtons = choices.map((choice) {
-      return QuestionChoice(choice, _answerQuestion);
-    }).toList();
-    /*
-    List<Widget> choiceButtons = [];
-    for (var choice in _questions[_questionIndex]['choices']) {
-      choiceButtons.add(QuestionChoice(choice, _answerQuestion));
-      /*
-      choiceButtons.add(ElevatedButton(
-        style: ButtonStyle(backgroundColor: MaterialStateProperty.all(Colors.green),),
-        child: Text(choice),
-        onPressed: () {
-          print(choice);
-          _answerQuestion();
-        },
-      ));
-      */
-    }
-    */
-
-    // Build question and choices layout
-    List<Widget> questionLayout = [questionTitle, ...choiceButtons];
-    return questionLayout;
-  }
-
-  List<Widget> buildSubmittedLayout() {
-    List<Widget> submittedLayout = [
-      Container(
-        width: double.infinity,
-        margin: EdgeInsets.all(5),
-        child: Text(
-          'Answers submitted!',
-          style: TextStyle(fontSize: 28),
-          textAlign: TextAlign.center,
-        ),
-      )
-    ];
-    return submittedLayout;
-  }
-
   @override
   Widget build(BuildContext context) {
-    List<Widget> childrenLayout = _questionIndex < _questions.length
-        ? buildQuestionLayout()
-        : buildSubmittedLayout();
+    Widget childrenLayout = _questionIndex < _questions.length
+        ? Quiz(
+            questions: _questions,
+            questionIndex: _questionIndex,
+            answerQuestion: _answerQuestion)
+        : Answer();
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),
-        body: Column(
-          children: childrenLayout,
-          /* // Named functions and Anonymous functions
+        body: childrenLayout,
+        /* // Named functions and Anonymous functions
           [
             Text(_questions[_questionIndex]),
             ElevatedButton(
@@ -144,7 +86,6 @@ class _AQuizAppState extends State<AQuizApp> {
             ),
           ],
           */
-        ),
       ),
     );
   }

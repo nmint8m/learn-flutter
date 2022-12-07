@@ -4,7 +4,7 @@ typedef StringCallback = void Function(String);
 
 class QuestionChoice extends StatelessWidget {
   final String choice;
-  
+
   // Passing callback functions arround
   // final Function selectHandler;
   // final VoidCallback selectHandler; // More specific void callback function than Function
