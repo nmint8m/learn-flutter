@@ -24,9 +24,7 @@ class QuestionChoice extends StatelessWidget {
           backgroundColor: MaterialStateProperty.all(Colors.green),
         ),
         child: Text(text),
-        onPressed: () {
-          selectHandler(text, score);
-        },
+        onPressed: () => selectHandler(text, score),
       ),
     );
   }

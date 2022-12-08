@@ -70,6 +70,15 @@ class _AQuizAppState extends State<AQuizApp> {
     print('Total score: $_totalScore');
   }
 
+  void _resetQuiz() {
+    setState(() {
+      _questionIndex = 0;
+      _totalScore = 0;
+    });
+    print('Next question: $_questionIndex');
+    print('Total score: $_totalScore');
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget childrenLayout = _questionIndex < _questions.length
@@ -77,7 +86,7 @@ class _AQuizAppState extends State<AQuizApp> {
             questions: _questions,
             questionIndex: _questionIndex,
             answerQuestion: _answerQuestion)
-        : Answer(_totalScore, _questions.length);
+        : Answer(_totalScore, _questions.length, _resetQuiz);
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(title: Text('A Quiz App')),

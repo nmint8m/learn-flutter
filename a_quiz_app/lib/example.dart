@@ -1,16 +1,16 @@
 class Person {
-  String name;
-  int age;
+  late String name;
+  late int age;
 
-  Person({String name, int age}) {
+  Person({required String name, required int age}) {
     this.name = name;
     this.age = age;
   }
 }
 
 class Pet {
-  String name;
-  int age;
+  late String name;
+  late int age;
 
   Pet({String name = 'A', int age = 0}) {
     this.name = name;
@@ -19,10 +19,10 @@ class Pet {
 }
 
 class Shoe {
-  String brand;
-  int size;
+  late String brand;
+  late int size;
 
-  Shoe({this.brand, this.size});
+  Shoe({required this.brand, required this.size});
 
   Shoe.large(this.brand) {
     size = 50;
