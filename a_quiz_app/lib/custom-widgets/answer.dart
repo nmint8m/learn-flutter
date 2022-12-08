@@ -26,12 +26,22 @@ class Answer extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           ElevatedButton(
-            child: Text(
-              'Retry!',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal),
+            style: ElevatedButton.styleFrom(
+              foregroundColor: Colors.black,
+              backgroundColor: Colors.pink,
             ),
+            child: Text('Retry! Elevated Button.'),
             onPressed: resetHandler,
           ),
+          TextButton(
+            child: Text('Retry! Text Button.'),
+            onPressed: resetHandler,
+          ),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.black)),
+            child: Text('Retry! Outlined Button.'),
+            onPressed: resetHandler,
+          )
         ],
       ),
     );
