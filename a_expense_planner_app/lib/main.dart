@@ -26,22 +26,26 @@ class MyHomePage extends StatelessWidget {
       appBar: AppBar(
         title: Text('An expense planner app'),
       ),
-      body: Column(children: <Widget>[
-        Card(
-          child: Container(
-            width: double.infinity,
-            child: Text('Chart'),
-          ),
-          elevation: 5,
-        ),
-        Container(
-          width: double.infinity,
-          child: Card(
-            child: Text('List of text'),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          Card(
+            child: Container(
+              width: double.infinity,
+              child: Text('Chart'),
+            ),
             elevation: 5,
           ),
-        ),
-      ]),
+          Container(
+            width: 100,
+            child: Card(
+              child: Text('List of text'),
+              elevation: 5,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
