@@ -38,7 +38,8 @@ class Answer extends StatelessWidget {
             onPressed: resetHandler,
           ),
           OutlinedButton(
-            style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.black)),
+            style:
+                OutlinedButton.styleFrom(side: BorderSide(color: Colors.black)),
             child: Text('Retry! Outlined Button.'),
             onPressed: resetHandler,
           )
