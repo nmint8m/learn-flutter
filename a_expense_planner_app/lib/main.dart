@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '/models/transaction.dart';
+import '/models/transaction-input-data.dart';
 import '/custom-widgets/transaction-section.dart';
 import '/custom-widgets/transaction-input.dart';
 
@@ -44,7 +45,7 @@ class MyHomePage extends StatelessWidget {
     ),
   ];
 
-  void _handle(Transaction transaction) {}
+  void _handle(TransactionInputData transactionInputData) {}
 
   @override
   Widget build(BuildContext context) {

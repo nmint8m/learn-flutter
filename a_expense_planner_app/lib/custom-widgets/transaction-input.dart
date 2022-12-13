@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
-import '/models/transaction.dart';
+import '/models/transaction-input-data.dart';
 
-typedef TransactionInputCallback = void Function(Transaction);
+typedef TransactionInputDataCallback = void Function(TransactionInputData);
 
 class TransactionInput extends StatelessWidget {
-  final TransactionInputCallback inputHandler;
+  final TransactionInputDataCallback inputHandler;
+
+  /*
+  late String _titleInput;
+  late String _amountInput;
+  */
+
+  final _title = TextEditingController();
+  final _amount = TextEditingController();
 
   TransactionInput({required this.inputHandler});
 
@@ -14,27 +22,36 @@ class TransactionInput extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.all(10),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             TextField(
               keyboardType: TextInputType.text,
               decoration: InputDecoration(
                 labelText: 'Title',
               ),
+              controller: _title,
+              // onChanged: (value) => _titleInput = value,
             ),
             TextField(
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: 'Amount',
               ),
+              controller: _amount,
+              // onChanged: (value) => _amountInput = value,
             ),
             ElevatedButton(
-              onPressed: () => inputHandler(Transaction(
-                id: '',
-                title: '',
-                amount: 100,
-                date: DateTime.now(),
+              onPressed: () {
+                print('${_title.text} ${_amount.text}');
+                // print('$_titleInput $_amountInput');
+              },
+              /*
+              onPressed: () => inputHandler(TransactionInputData(
+                title: _titleInput,
+                amount: _amountInput,
               )),
-              child: Text('Submit'),
+              */
+              child: Text('Add transaction'),
             ),
           ],
         ),
