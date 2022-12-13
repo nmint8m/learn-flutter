@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '/models/transaction.dart';
 
 class TransactionItem extends StatelessWidget {
   final Transaction transaction;
 
   TransactionItem({required this.transaction});
+
+  String get _amountText {
+    return '\$ ${transaction.amount}';
+  }
+
+  String get _dateTimeText {
+    return DateFormat('dd MMM yyyy HH:mm:ss').format(transaction.date);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,11 +32,12 @@ class TransactionItem extends StatelessWidget {
               ),
             ),
             child: Text(
-              transaction.amount.toString(),
+              _amountText,
               style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                  color: Colors.blue),
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                color: Colors.blue,
+              ),
             ),
           ),
           Column(
@@ -43,7 +53,7 @@ class TransactionItem extends StatelessWidget {
                 ),
               ),
               Text(
-                transaction.date.toString(),
+                _dateTimeText,
                 style: TextStyle(
                   fontWeight: FontWeight.normal,
                   fontSize: 11,
