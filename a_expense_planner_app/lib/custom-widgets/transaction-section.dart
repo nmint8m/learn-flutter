@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '/custom-widgets/transaction-item.dart';
 import '/models/transaction.dart';
 
 class TransactionSection extends StatelessWidget {
@@ -9,11 +10,7 @@ class TransactionSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     List<Widget> cards = transactions.map((transaction) {
-      return Card(
-          child: Text(
-        transaction.title,
-        style: TextStyle(color: Colors.green),
-      ));
+      return TransactionItem(transaction: transaction);
     }).toList();
 
     return Container(
