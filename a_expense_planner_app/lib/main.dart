@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '/models/transaction.dart';
+import '/custom-widgets/transaction-section.dart';
 
 void main() {
   runApp(const MyApp());
@@ -20,6 +22,27 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatelessWidget {
+  final List<Transaction> transactions = [
+    Transaction(
+      id: '1',
+      title: 'New car',
+      amount: 1000.1,
+      date: DateTime.now(),
+    ),
+    Transaction(
+      id: '2',
+      title: 'New house',
+      amount: 5000.5,
+      date: DateTime.now(),
+    ),
+    Transaction(
+      id: '3',
+      title: 'Food',
+      amount: 500.5,
+      date: DateTime.now(),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,23 +50,17 @@ class MyHomePage extends StatelessWidget {
         title: Text('An expense planner app'),
       ),
       body: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Card(
+            elevation: 5,
             child: Container(
               width: double.infinity,
               child: Text('Chart'),
             ),
-            elevation: 5,
           ),
-          Container(
-            width: 100,
-            child: Card(
-              child: Text('List of text'),
-              elevation: 5,
-            ),
-          ),
+          TransactionSection(transactions: transactions),
         ],
       ),
     );
