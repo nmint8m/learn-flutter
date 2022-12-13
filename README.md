@@ -42,4 +42,8 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <summary> Screenshots: Section 4 - A expense planner app </summary>
 
+## 76. Mapping Data Into Widgets
+
+<img src="./images/76.%20Mapping%20Data%20Into%20Widgets.png" width=200>
+
 </details>
