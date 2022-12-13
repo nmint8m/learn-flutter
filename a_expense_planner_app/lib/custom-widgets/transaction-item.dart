@@ -12,12 +12,44 @@ class TransactionItem extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            child: Text(transaction.amount.toString()),
+            margin: EdgeInsets.symmetric(
+              vertical: 20.0,
+              horizontal: 30.0,
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Colors.blue,
+                width: 2.0,
+              ),
+            ),
+            child: Text(
+              transaction.amount.toString(),
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  color: Colors.blue),
+            ),
           ),
           Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(transaction.title),
-              Text(transaction.date.toString()),
+              Text(
+                transaction.title,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Colors.blueGrey,
+                ),
+              ),
+              Text(
+                transaction.date.toString(),
+                style: TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 11,
+                  color: Colors.grey,
+                ),
+              ),
             ],
           ),
         ],
