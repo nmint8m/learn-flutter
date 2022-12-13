@@ -4,6 +4,12 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 ## Section 2 - A quiz app
 
+<img src="./images/55.%20Reseting%20the%20quiz.gif" width=200>
+
+<details>
+
+<summary> Screenshots: Section 2 - A quiz app</summary>
+
 ### 25. Running the app on an emulator
 
 <img src="./images/25.%20Running%20the%20app%20on%20an%20emulator.png" width=200>
@@ -28,5 +34,12 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <img src="./images/55.%20Reseting%20the%20quiz.gif" width=200>
 
+</details>
+
 ## Section 4 - A expense planner app
 
+<details>
+
+<summary> Screenshots: Section 4 - A expense planner app </summary>
+
+</details>
