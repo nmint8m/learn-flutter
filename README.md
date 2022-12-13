@@ -58,4 +58,8 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <img src="./images/82.%20Using%20String%20Interpolation%20and%20Formatting%20Dates.png" width=200>
 
+### 85. Adding Text Input Widgets
+
+<img src="./images/85.%20Adding%20Text%20Input%20Widgets%20.png" width=200>
+
 </details>
