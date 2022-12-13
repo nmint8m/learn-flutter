@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '/models/transaction.dart';
 import '/custom-widgets/transaction-section.dart';
+import '/custom-widgets/transaction-input.dart';
 
 void main() {
   runApp(const MyApp());
@@ -43,6 +44,8 @@ class MyHomePage extends StatelessWidget {
     ),
   ];
 
+  void _handle(Transaction transaction) {}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,7 +54,7 @@ class MyHomePage extends StatelessWidget {
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Card(
             elevation: 5,
@@ -60,6 +63,7 @@ class MyHomePage extends StatelessWidget {
               child: Text('Chart'),
             ),
           ),
+          TransactionInput(inputHandler: _handle),
           TransactionSection(transactions: transactions),
         ],
       ),
