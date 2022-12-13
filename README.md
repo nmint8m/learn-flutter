@@ -50,4 +50,8 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <img src="./images/77.%20Building%20a%20Custom%20List%20Item.png" width=200>
 
+### 78. Styling a Container and Text
+
+<img src="./images/78.%20Styling%20a%20Container%20and%20Text.png" width=200>
+
 </details>
