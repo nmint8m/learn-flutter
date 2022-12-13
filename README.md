@@ -42,8 +42,12 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <summary> Screenshots: Section 4 - A expense planner app </summary>
 
-## 76. Mapping Data Into Widgets
+### 76. Mapping Data Into Widgets
 
 <img src="./images/76.%20Mapping%20Data%20Into%20Widgets.png" width=200>
+
+### 77. Building a Custom List Item
+
+<img src="./images/77.%20Building%20a%20Custom%20List%20Item.png" width=200>
 
 </details>
