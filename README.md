@@ -54,4 +54,8 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <img src="./images/78.%20Styling%20a%20Container%20and%20Text.png" width=200>
 
+### 82. Using String Interpolation and Formatting Dates
+
+<img src="./images/82.%20Using%20String%20Interpolation%20and%20Formatting%20Dates.png" width=200>
+
 </details>
