@@ -42,7 +42,6 @@ class _TransactionSectionState extends State<TransactionSection> {
     setState(() {
       transactions.add(newTransaction);
     });
-    print(newTransaction);
   }
 
   @override

@@ -12,8 +12,13 @@ class TransactionList extends StatelessWidget {
     List<Widget> cards = transactions.map((transaction) {
       return TransactionItem(transaction: transaction);
     }).toList();
-    return Column(
-      children: cards,
+    return Container(
+      height: 250,
+      child: SingleChildScrollView(
+        child: Column(
+          children: cards,
+        ),
+      ),
     );
   }
 }

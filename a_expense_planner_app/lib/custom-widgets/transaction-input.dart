@@ -41,8 +41,10 @@ class TransactionInput extends StatelessWidget {
             ),
             ElevatedButton(
               onPressed: () {
+                /*
                 print('${_title.text} ${_amount.text}');
-                // print('$_titleInput $_amountInput');
+                print('$_titleInput $_amountInput');
+                */
                 inputHandler(TransactionInputData(
                   title: _title.text,
                   amount: double.parse(_amount.text),
