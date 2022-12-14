@@ -2,6 +2,11 @@
 
 Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-ios-android-apps) - A Complete Guide to the Flutter SDK & Flutter Framework for building native iOS and Android apps.
 
+This repository is to save the progress of learning Flutter.
+
+- [Section 2 - A quiz app](#section-2---a-quiz-app)
+- [Section 4 - A expense planner app](#section-4---a-expense-planner-app)
+
 ## Section 2 - A quiz app
 
 <img src="./images/55.%20Reseting%20the%20quiz.gif" width=200>
