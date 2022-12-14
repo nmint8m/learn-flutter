@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '/models/transaction-input-data.dart';
+import '../models/transaction-input-data.dart';
 
 typedef TransactionInputDataCallback = void Function(TransactionInputData);
 
@@ -38,12 +38,15 @@ class TransactionInput extends StatelessWidget {
                 labelText: 'Amount',
               ),
               controller: _amount,
-              // onChanged: (value) => _amountInput = value,
             ),
             ElevatedButton(
               onPressed: () {
                 print('${_title.text} ${_amount.text}');
                 // print('$_titleInput $_amountInput');
+                inputHandler(TransactionInputData(
+                  title: _title.text,
+                  amount: double.parse(_amount.text),
+                ));
               },
               /*
               onPressed: () => inputHandler(TransactionInputData(

@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import '/models/transaction.dart';
-import '/models/transaction-input-data.dart';
 import '/custom-widgets/transaction-section.dart';
-import '/custom-widgets/transaction-input.dart';
 
 void main() {
   runApp(const MyApp());
@@ -24,29 +21,6 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatelessWidget {
-  final List<Transaction> transactions = [
-    Transaction(
-      id: '1',
-      title: 'New car',
-      amount: 1000.1,
-      date: DateTime.now(),
-    ),
-    Transaction(
-      id: '2',
-      title: 'New house',
-      amount: 5000.5,
-      date: DateTime.now(),
-    ),
-    Transaction(
-      id: '3',
-      title: 'Food',
-      amount: 500.5,
-      date: DateTime.now(),
-    ),
-  ];
-
-  void _handle(TransactionInputData transactionInputData) {}
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -64,8 +38,7 @@ class MyHomePage extends StatelessWidget {
               child: Text('Chart'),
             ),
           ),
-          TransactionInput(inputHandler: _handle),
-          TransactionSection(transactions: transactions),
+          TransactionSection(),
         ],
       ),
     );
