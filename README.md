@@ -62,4 +62,8 @@ Follow [Udemy Course](https://www.udemy.com/course/learn-flutter-dart-to-build-i
 
 <img src="./images/85.%20Adding%20Text%20Input%20Widgets%20.png" width=200>
 
+### 88. Connecting Widgets & Managing Data / State
+
+<img src="./images/88.%20Connecting%20Widgets%20Managing%20Data%20State.gif" width=200>
+
 </details>
