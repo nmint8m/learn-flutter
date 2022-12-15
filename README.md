@@ -71,4 +71,8 @@ This repository is to save the progress of learning Flutter.
 
 <img src="./images/88.%20Connecting%20Widgets%20Managing%20Data%20State.gif" width=200>
 
+### 92. Further Input & Output Styling and Configuration
+
+<img src="./images/92.%20Further%20Input%20&%20Output%20Styling%20and%20Configuration.png" width=200>
+
 </details>
