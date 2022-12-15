@@ -8,7 +8,7 @@ class TransactionItem extends StatelessWidget {
   TransactionItem({required this.transaction});
 
   String get _amountText {
-    return '\$ ${transaction.amount}';
+    return '\$ ${transaction.amount.toStringAsFixed(2)}';
   }
 
   String get _dateTimeText {

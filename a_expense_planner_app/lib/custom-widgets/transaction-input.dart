@@ -16,6 +16,23 @@ class TransactionInput extends StatelessWidget {
 
   TransactionInput({required this.inputHandler});
 
+  void submitData() {
+    /*
+      print('${_title.text} ${_amount.text}');
+      print('$_titleInput $_amountInput');
+    */
+    String enteredTitle = _title.text;
+    double enteredAmount = double.parse(_amount.text);
+    if (enteredTitle.trim().isEmpty || enteredAmount < 0) {
+      return;
+    }
+
+    inputHandler(TransactionInputData(
+      title: _title.text,
+      amount: double.parse(_amount.text),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -38,18 +55,11 @@ class TransactionInput extends StatelessWidget {
                 labelText: 'Amount',
               ),
               controller: _amount,
+              onSubmitted: (_) => submitData,
             ),
             ElevatedButton(
-              onPressed: () {
-                /*
-                print('${_title.text} ${_amount.text}');
-                print('$_titleInput $_amountInput');
-                */
-                inputHandler(TransactionInputData(
-                  title: _title.text,
-                  amount: double.parse(_amount.text),
-                ));
-              },
+              onPressed: submitData,
+              // or onPressed: () => submitData,
               /*
               onPressed: () => inputHandler(TransactionInputData(
                 title: _titleInput,
