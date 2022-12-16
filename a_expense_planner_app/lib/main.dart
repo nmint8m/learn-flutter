@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '/custom-widgets/transaction-section.dart';
+import './models/transaction-input-data.dart';
+import './custom-widgets/transaction-section.dart';
+import './custom-widgets/transaction-input.dart';
 
 void main() {
   runApp(const MyApp());
@@ -21,6 +23,29 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatelessWidget {
+  final _transactionSection = TransactionSection();
+
+  MyHomePage({super.key});
+
+  void _startAddNewTransaction(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) {
+        return GestureDetector(
+          child: TransactionInput(inputHandler: _addNewTransaction),
+          onTap: () {},
+          behavior: HitTestBehavior.opaque,
+        );
+      },
+    );
+  }
+
+  void _addNewTransaction(TransactionInputData data) {
+    print(data.title);
+    print(data.amount);
+    _transactionSection.controller.addNewTransactionHandler(data);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -29,7 +54,7 @@ class MyHomePage extends StatelessWidget {
         actions: <Widget>[
           IconButton(
             icon: Icon(Icons.add),
-            onPressed: () {},
+            onPressed: () => _startAddNewTransaction(context),
           )
         ],
       ),
@@ -45,14 +70,14 @@ class MyHomePage extends StatelessWidget {
                 child: Text('Chart'),
               ),
             ),
-            TransactionSection(),
+            _transactionSection,
           ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: FloatingActionButton(
         child: Icon(Icons.add),
-        onPressed: () {},
+        onPressed: () => _startAddNewTransaction(context),
       ),
     );
   }

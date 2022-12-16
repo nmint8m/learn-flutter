@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
-import '../custom-widgets/transaction-input.dart';
 import '../custom-widgets/transaction-list.dart';
 import '../models/transaction.dart';
 import '../models/transaction-input-data.dart';
 
+class TransactionSectionController {
+  late Function(TransactionInputData) addNewTransactionHandler;
+}
+
 class TransactionSection extends StatefulWidget {
+  final controller = TransactionSectionController();
+
+  TransactionSection({super.key});
+
   @override
-  State<TransactionSection> createState() => _TransactionSectionState();
+  State<TransactionSection> createState() =>
+      _TransactionSectionState(controller);
 }
 
 class _TransactionSectionState extends State<TransactionSection> {
@@ -31,6 +39,10 @@ class _TransactionSectionState extends State<TransactionSection> {
     ),
   ];
 
+  _TransactionSectionState(TransactionSectionController controller) {
+    controller.addNewTransactionHandler = addNewTransaction;
+  }
+
   void addNewTransaction(TransactionInputData transactionInputData) {
     int id = transactions.length + 1;
     Transaction newTransaction = Transaction(
@@ -50,7 +62,7 @@ class _TransactionSectionState extends State<TransactionSection> {
       width: double.infinity,
       child: Column(
         children: [
-          TransactionInput(inputHandler: addNewTransaction),
+          // TransactionInput(inputHandler: addNewTransaction),
           TransactionList(transactions: transactions)
         ],
       ),

@@ -5,7 +5,10 @@ import '../models/transaction.dart';
 class TransactionItem extends StatelessWidget {
   final Transaction transaction;
 
-  TransactionItem({required this.transaction});
+  TransactionItem({
+    super.key,
+    required this.transaction,
+  });
 
   String get _amountText {
     return '\$ ${transaction.amount.toStringAsFixed(2)}';

@@ -14,7 +14,10 @@ class TransactionInput extends StatelessWidget {
   final _title = TextEditingController();
   final _amount = TextEditingController();
 
-  TransactionInput({required this.inputHandler});
+  TransactionInput({
+    super.key,
+    required this.inputHandler,
+  });
 
   void submitData() {
     /*
@@ -55,7 +58,6 @@ class TransactionInput extends StatelessWidget {
                 labelText: 'Amount',
               ),
               controller: _amount,
-              onSubmitted: (_) => submitData,
             ),
             ElevatedButton(
               onPressed: submitData,

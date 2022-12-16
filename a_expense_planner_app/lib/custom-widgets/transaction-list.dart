@@ -5,12 +5,15 @@ import '../models/transaction.dart';
 class TransactionList extends StatelessWidget {
   final List<Transaction> transactions;
 
-  TransactionList({required this.transactions});
+  TransactionList({
+    super.key,
+    required this.transactions,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 250,
+      height: 550,
       child: ListView.builder(
         itemBuilder: (context, index) {
           return TransactionItem(
