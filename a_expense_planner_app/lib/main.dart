@@ -15,7 +15,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.orange,
+        accentColor: Colors.amber,
       ),
       home: MyHomePage(),
     );
@@ -66,6 +67,7 @@ class MyHomePage extends StatelessWidget {
             Card(
               elevation: 5,
               child: Container(
+                color: Theme.of(context).accentColor,
                 width: double.infinity,
                 child: Text('Chart'),
               ),

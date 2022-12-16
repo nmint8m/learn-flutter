@@ -30,7 +30,7 @@ class TransactionItem extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               border: Border.all(
-                color: Colors.blue,
+                color: Theme.of(context).primaryColor,
                 width: 2.0,
               ),
             ),
@@ -39,7 +39,7 @@ class TransactionItem extends StatelessWidget {
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
-                color: Colors.blue,
+                color: Theme.of(context).primaryColor,
               ),
             ),
           ),
@@ -52,7 +52,7 @@ class TransactionItem extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
-                  color: Colors.blueGrey,
+                  color: Theme.of(context).primaryColor,
                 ),
               ),
               Text(
