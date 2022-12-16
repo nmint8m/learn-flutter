@@ -3,9 +3,19 @@ import '../models/transaction-input-data.dart';
 
 typedef TransactionInputDataCallback = void Function(TransactionInputData);
 
-class TransactionInput extends StatelessWidget {
+class TransactionInput extends StatefulWidget {
   final TransactionInputDataCallback inputHandler;
 
+  TransactionInput({
+    super.key,
+    required this.inputHandler,
+  });
+
+  @override
+  State<TransactionInput> createState() => _TransactionInputState();
+}
+
+class _TransactionInputState extends State<TransactionInput> {
   /*
   late String _titleInput;
   late String _amountInput;
@@ -13,11 +23,6 @@ class TransactionInput extends StatelessWidget {
 
   final _title = TextEditingController();
   final _amount = TextEditingController();
-
-  TransactionInput({
-    super.key,
-    required this.inputHandler,
-  });
 
   void submitData() {
     /*
@@ -30,10 +35,12 @@ class TransactionInput extends StatelessWidget {
       return;
     }
 
-    inputHandler(TransactionInputData(
+    widget.inputHandler(TransactionInputData(
       title: _title.text,
       amount: double.parse(_amount.text),
     ));
+
+    Navigator.of(context).pop();
   }
 
   @override
