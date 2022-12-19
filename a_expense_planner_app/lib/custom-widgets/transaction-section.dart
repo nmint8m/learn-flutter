@@ -4,18 +4,13 @@ import '../custom-widgets/transaction-empty-list.dart';
 import '../models/transaction.dart';
 import '../models/transaction-input-data.dart';
 
-class TransactionSectionController {
-  late Function(TransactionInputData) addNewTransactionHandler;
-}
-
 class TransactionSection extends StatefulWidget {
-  final controller = TransactionSectionController();
-
   TransactionSection({super.key});
 
+  Function(TransactionInputData)? addNewTransactionHandler;
+
   @override
-  State<TransactionSection> createState() =>
-      _TransactionSectionState(controller);
+  State<TransactionSection> createState() => _TransactionSectionState();
 }
 
 class _TransactionSectionState extends State<TransactionSection> {
@@ -42,10 +37,6 @@ class _TransactionSectionState extends State<TransactionSection> {
   ];
   */
 
-  _TransactionSectionState(TransactionSectionController controller) {
-    controller.addNewTransactionHandler = addNewTransaction;
-  }
-
   void addNewTransaction(TransactionInputData transactionInputData) {
     int id = transactions.length + 1;
     Transaction newTransaction = Transaction(
@@ -61,6 +52,8 @@ class _TransactionSectionState extends State<TransactionSection> {
 
   @override
   Widget build(BuildContext context) {
+    widget.addNewTransactionHandler = addNewTransaction;
+
     return Container(
       width: double.infinity,
       height: 300,

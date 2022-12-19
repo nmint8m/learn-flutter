@@ -82,7 +82,6 @@ class MyApp extends StatelessWidget {
       title: 'Flutter Demo',
       theme: ThemeData(
         primarySwatch: Colors.orange,
-        accentColor: Colors.amber,
         fontFamily: 'Quicksand',
         appBarTheme: _creatAppBarTheme(),
         textTheme: _createTextTheme(),
@@ -113,7 +112,9 @@ class MyHomePage extends StatelessWidget {
   void _addNewTransaction(TransactionInputData data) {
     print(data.title);
     print(data.amount);
-    _transactionSection.controller.addNewTransactionHandler(data);
+    if (_transactionSection.addNewTransactionHandler != null) {
+      _transactionSection.addNewTransactionHandler!(data);
+    }
   }
 
   @override
