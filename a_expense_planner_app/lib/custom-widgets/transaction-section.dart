@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../custom-widgets/transaction-list.dart';
+import '../custom-widgets/transaction-empty-list.dart';
 import '../models/transaction.dart';
 import '../models/transaction-input-data.dart';
 
@@ -18,7 +19,8 @@ class TransactionSection extends StatefulWidget {
 }
 
 class _TransactionSectionState extends State<TransactionSection> {
-  final List<Transaction> transactions = [
+  final List<Transaction> transactions = [];
+  /*
     Transaction(
       id: '1',
       title: 'New car',
@@ -38,6 +40,7 @@ class _TransactionSectionState extends State<TransactionSection> {
       date: DateTime.now(),
     ),
   ];
+  */
 
   _TransactionSectionState(TransactionSectionController controller) {
     controller.addNewTransactionHandler = addNewTransaction;
@@ -60,12 +63,15 @@ class _TransactionSectionState extends State<TransactionSection> {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      child: Column(
-        children: [
-          // TransactionInput(inputHandler: addNewTransaction),
-          TransactionList(transactions: transactions)
-        ],
-      ),
+      height: 300,
+      child: transactions.isEmpty
+          ? TransactionEmptyList()
+          : Column(
+              children: [
+                // TransactionInput(inputHandler: addNewTransaction),
+                TransactionList(transactions: transactions)
+              ],
+            ),
     );
   }
 }
