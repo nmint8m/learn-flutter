@@ -36,11 +36,7 @@ class TransactionItem extends StatelessWidget {
             ),
             child: Text(
               _amountText,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                color: Theme.of(context).primaryColor,
-              ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
           Column(
@@ -49,19 +45,11 @@ class TransactionItem extends StatelessWidget {
             children: [
               Text(
                 transaction.title,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Theme.of(context).primaryColor,
-                ),
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
               Text(
                 _dateTimeText,
-                style: TextStyle(
-                  fontWeight: FontWeight.normal,
-                  fontSize: 11,
-                  color: Colors.grey,
-                ),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),

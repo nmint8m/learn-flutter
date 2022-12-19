@@ -4,11 +4,77 @@ import './custom-widgets/transaction-section.dart';
 import './custom-widgets/transaction-input.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+  AppBarTheme _creatAppBarTheme() {
+    return AppBarTheme(
+      toolbarTextStyle: ThemeData.light()
+          .textTheme
+          .copyWith(
+            titleLarge: const TextStyle(
+              fontFamily: 'OpenSands',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          )
+          .bodyText2,
+      titleTextStyle: ThemeData.light()
+          .textTheme
+          .copyWith(
+            titleLarge: const TextStyle(
+              fontFamily: 'OpenSands',
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          )
+          .headline6,
+    );
+  }
+
+  TextTheme _createTextTheme() {
+    return ThemeData.light().textTheme.copyWith(
+          titleLarge: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Colors.orange,
+          ),
+          titleMedium: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: Colors.orange,
+          ),
+          titleSmall: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.orange,
+          ),
+          bodyLarge: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.normal,
+            fontSize: 13,
+            color: Colors.black,
+          ),
+          bodyMedium: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.normal,
+            fontSize: 12,
+            color: Colors.black,
+          ),
+          bodySmall: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.normal,
+            fontSize: 11,
+            color: Colors.grey,
+          ),
+        );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +83,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.orange,
         accentColor: Colors.amber,
+        fontFamily: 'Quicksand',
+        appBarTheme: _creatAppBarTheme(),
+        textTheme: _createTextTheme(),
       ),
       home: MyHomePage(),
     );
