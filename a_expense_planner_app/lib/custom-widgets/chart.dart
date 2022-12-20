@@ -39,15 +39,22 @@ class Chart extends StatelessWidget {
     return Card(
       elevation: 5,
       margin: EdgeInsets.all(20),
-      child: Row(
-        children: groupedTransactionValues.map((transaction) {
-          double dayTotal = double.parse(transaction['amount'].toString());
-          return Bar(
-            weekday: transaction['day'].toString(),
-            total: dayTotal,
-            percentOfTotal: dayTotal / weekTotal,
-          );
-        }).toList(),
+      child: Container(
+        padding: EdgeInsets.all(10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: groupedTransactionValues.map((transaction) {
+            double dayTotal = transaction['amount'] as double;
+            return Flexible(
+              fit: FlexFit.tight,
+              child: Bar(
+                weekday: transaction['day'].toString(),
+                total: dayTotal,
+                percentOfTotal: weekTotal == 0.0 ? 0.0 : dayTotal / weekTotal,
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
