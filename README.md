@@ -84,4 +84,8 @@ This repository is to save the progress of learning Flutter.
 <img src="./images/99.%20Adding%20Images%20to%20the%20App%20-%201.png" width=200>
 <img src="./images/99.%20Adding%20Images%20to%20the%20App%20-%202.png" width=200>
 
+### 104. Creating Bars for our Chart
+
+<img src="./images/104.%20Creating%20Bars%20for%20our%20Chart.png" width=200>
+
 </details>
