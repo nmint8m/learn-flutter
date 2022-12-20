@@ -101,9 +101,9 @@ class MyHomePage extends StatelessWidget {
       context: context,
       builder: (_) {
         return GestureDetector(
-          child: TransactionInput(inputHandler: _addNewTransaction),
           onTap: () {},
           behavior: HitTestBehavior.opaque,
+          child: TransactionInput(inputHandler: _addNewTransaction),
         );
       },
     );

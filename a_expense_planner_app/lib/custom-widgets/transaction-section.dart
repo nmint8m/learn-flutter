@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../custom-widgets/transaction-list.dart';
 import '../custom-widgets/transaction-empty-list.dart';
+import '../custom-widgets/chart.dart';
 import '../models/transaction.dart';
 import '../models/transaction-input-data.dart';
 
@@ -14,7 +15,7 @@ class TransactionSection extends StatefulWidget {
 }
 
 class _TransactionSectionState extends State<TransactionSection> {
-  final List<Transaction> transactions = [];
+  List<Transaction> transactions = [];
   /*
     Transaction(
       id: '1',
@@ -36,6 +37,13 @@ class _TransactionSectionState extends State<TransactionSection> {
     ),
   ];
   */
+
+  List<Transaction> get _recentTransaction {
+    return transactions.where((transaction) {
+      return transaction.date
+          .isAfter(DateTime.now().subtract(Duration(days: 7)));
+    }).toList();
+  }
 
   void addNewTransaction(TransactionInputData transactionInputData) {
     int id = transactions.length + 1;
@@ -61,6 +69,7 @@ class _TransactionSectionState extends State<TransactionSection> {
           ? TransactionEmptyList()
           : Column(
               children: [
+                Chart(recentTransactions: _recentTransaction),
                 // TransactionInput(inputHandler: addNewTransaction),
                 TransactionList(transactions: transactions)
               ],

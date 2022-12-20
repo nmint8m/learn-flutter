@@ -10,7 +10,6 @@ class Chart extends StatelessWidget {
       final weekday = DateTime.now().subtract(
         Duration(days: index),
       );
-
       double totalSum = 0.0;
       for (var index = 0; index < recentTransactions.length; index++) {
         if (recentTransactions[index].date.day == weekday.day &&
@@ -19,9 +18,8 @@ class Chart extends StatelessWidget {
           totalSum += recentTransactions[index].amount;
         }
       }
-
       return {
-        'day': DateFormat.E(weekday),
+        'day': DateFormat.E().format(weekday),
         'amount': totalSum,
       };
     });
