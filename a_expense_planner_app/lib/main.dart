@@ -134,14 +134,6 @@ class MyHomePage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Card(
-              elevation: 5,
-              child: Container(
-                color: Theme.of(context).accentColor,
-                width: double.infinity,
-                child: Text('Chart'),
-              ),
-            ),
             _transactionSection,
           ],
         ),

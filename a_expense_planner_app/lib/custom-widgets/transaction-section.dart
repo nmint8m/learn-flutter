@@ -64,7 +64,7 @@ class _TransactionSectionState extends State<TransactionSection> {
 
     return Container(
       width: double.infinity,
-      height: 700,
+      height: 500,
       child: transactions.isEmpty
           ? TransactionEmptyList()
           : Column(
