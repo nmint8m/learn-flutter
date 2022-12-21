@@ -15,12 +15,40 @@ class TransactionItem extends StatelessWidget {
   }
 
   String get _dateTimeText {
-    return DateFormat('dd MMM yyyy HH:mm:ss').format(transaction.date);
+    return DateFormat.yMMMd().format(transaction.date);
+    // return DateFormat('dd MMM yyyy HH:mm:ss').format(transaction.date);
   }
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 10,
+      margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+      child: ListTile(
+        leading: CircleAvatar(
+          radius: 30,
+          child: Padding(
+            padding: EdgeInsets.all(5),
+            child: FittedBox(
+              child: Text(
+                _amountText,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+          ),
+        ),
+        title: Text(
+          transaction.title,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        subtitle: Text(
+          _dateTimeText,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+    /*
+    Card(
       child: Row(
         children: [
           Container(
@@ -56,5 +84,6 @@ class TransactionItem extends StatelessWidget {
         ],
       ),
     );
+    */
   }
 }
