@@ -88,4 +88,8 @@ This repository is to save the progress of learning Flutter.
 
 <img src="./images/104.%20Creating%20Bars%20for%20our%20Chart.png" width=200>
 
+### 109. Improving the Overall Chart
+
+<img src="./images/109.%20Improving%20the%20Overall%20Chart.png" width=200>
+
 </details>
