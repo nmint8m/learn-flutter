@@ -37,41 +37,47 @@ class MyApp extends StatelessWidget {
 
   TextTheme _createTextTheme() {
     return ThemeData.light().textTheme.copyWith(
-          titleLarge: const TextStyle(
+          headline6: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 18,
             color: Colors.orange,
           ),
-          titleMedium: const TextStyle(
+          subtitle1: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 16,
             color: Colors.orange,
           ),
-          titleSmall: const TextStyle(
+          subtitle2: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 14,
             color: Colors.orange,
           ),
-          bodyLarge: const TextStyle(
+          bodyText1: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 13,
             color: Colors.black,
           ),
-          bodyMedium: const TextStyle(
+          bodyText2: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 12,
             color: Colors.black,
           ),
-          bodySmall: const TextStyle(
+          caption: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 11,
             color: Colors.grey,
+          ),
+          button: const TextStyle(
+            fontFamily: 'OpenSans',
+            fontWeight: FontWeight.normal,
+            fontSize: 11,
+            color: Colors.white,
           ),
         );
   }

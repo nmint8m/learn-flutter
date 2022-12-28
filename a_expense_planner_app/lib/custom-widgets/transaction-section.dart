@@ -46,9 +46,8 @@ class _TransactionSectionState extends State<TransactionSection> {
   }
 
   void addNewTransaction(TransactionInputData transactionInputData) {
-    int id = transactions.length + 1;
     Transaction newTransaction = Transaction(
-      id: id.toString(),
+      id: DateTime.now().toString(),
       title: transactionInputData.title,
       amount: transactionInputData.amount,
       date: DateTime.now(),

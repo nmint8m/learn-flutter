@@ -66,6 +66,23 @@ class _TransactionInputState extends State<TransactionInput> {
               ),
               controller: _amount,
             ),
+            Container(
+              height: 70,
+              child: Row(children: [
+                Text('No date chosen.'),
+                TextButton(
+                  child: Text(
+                    'Add date',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ButtonStyle(
+                    foregroundColor: MaterialStateProperty.all(
+                        Theme.of(context).primaryColor),
+                  ),
+                  onPressed: () {},
+                )
+              ]),
+            ),
             ElevatedButton(
               onPressed: submitData,
               // or onPressed: () => submitData,
@@ -75,7 +92,14 @@ class _TransactionInputState extends State<TransactionInput> {
                 amount: _amountInput,
               )),
               */
-              child: Text('Add transaction'),
+              child: Text(
+                'Add transaction',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              style: ButtonStyle(
+                foregroundColor: MaterialStateProperty.all(
+                    Theme.of(context).textTheme.button?.color),
+              ),
             ),
           ],
         ),
