@@ -4,10 +4,12 @@ import '../models/transaction.dart';
 
 class TransactionList extends StatelessWidget {
   final List<Transaction> transactions;
+  final void Function(String) deleteCallback;
 
   TransactionList({
     super.key,
     required this.transactions,
+    required this.deleteCallback,
   });
 
   @override
@@ -18,6 +20,7 @@ class TransactionList extends StatelessWidget {
         itemBuilder: (context, index) {
           return TransactionItem(
             transaction: transactions[index],
+            deleteCallback: deleteCallback,
           );
         },
         itemCount: transactions.length,

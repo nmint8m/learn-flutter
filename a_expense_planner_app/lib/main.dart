@@ -91,6 +91,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Quicksand',
         appBarTheme: _creatAppBarTheme(),
         textTheme: _createTextTheme(),
+        errorColor: Colors.red,
       ),
       home: MyHomePage(),
     );

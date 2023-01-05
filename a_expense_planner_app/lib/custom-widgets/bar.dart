@@ -54,7 +54,7 @@ class Bar extends StatelessWidget {
             child: FittedBox(
               child: Text('\$ ${total.toStringAsFixed(2)}'),
             )),
-        Text('$percentOfTotal'),
+        Text('${percentOfTotal.toStringAsFixed(2)}'),
       ],
     );
   }

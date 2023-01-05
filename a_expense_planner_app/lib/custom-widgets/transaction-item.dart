@@ -4,10 +4,12 @@ import '../models/transaction.dart';
 
 class TransactionItem extends StatelessWidget {
   final Transaction transaction;
+  final void Function(String) deleteCallback;
 
   TransactionItem({
     super.key,
     required this.transaction,
+    required this.deleteCallback,
   });
 
   String get _amountText {
@@ -17,6 +19,10 @@ class TransactionItem extends StatelessWidget {
   String get _dateTimeText {
     return DateFormat.yMMMd().format(transaction.date);
     // return DateFormat('dd MMM yyyy HH:mm:ss').format(transaction.date);
+  }
+
+  void _deleteTransaction() {
+    deleteCallback(transaction.id);
   }
 
   @override
@@ -44,6 +50,11 @@ class TransactionItem extends StatelessWidget {
         subtitle: Text(
           _dateTimeText,
           style: Theme.of(context).textTheme.bodySmall,
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.delete),
+          color: Theme.of(context).errorColor,
+          onPressed: _deleteTransaction,
         ),
       ),
     );

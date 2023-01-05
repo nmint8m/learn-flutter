@@ -57,12 +57,21 @@ class _TransactionSectionState extends State<TransactionSection> {
     });
   }
 
+  void deleteTransaction(String id) {
+    setState(() {
+      transactions.removeWhere((transaction) {
+        return transaction.id == id;
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     widget.addNewTransactionHandler = addNewTransaction;
     Widget transactionList = transactions.isEmpty
         ? TransactionEmptyList()
-        : TransactionList(transactions: transactions);
+        : TransactionList(
+            transactions: transactions, deleteCallback: deleteTransaction);
     return Container(
       width: double.infinity,
       height: 500,
