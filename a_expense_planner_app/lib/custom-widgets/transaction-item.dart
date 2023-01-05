@@ -21,10 +21,6 @@ class TransactionItem extends StatelessWidget {
     // return DateFormat('dd MMM yyyy HH:mm:ss').format(transaction.date);
   }
 
-  void _deleteTransaction() {
-    deleteCallback(transaction.id);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -54,7 +50,7 @@ class TransactionItem extends StatelessWidget {
         trailing: IconButton(
           icon: Icon(Icons.delete),
           color: Theme.of(context).errorColor,
-          onPressed: _deleteTransaction,
+          onPressed: () => deleteCallback(transaction.id),
         ),
       ),
     );
