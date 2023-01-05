@@ -59,9 +59,7 @@ class _TransactionSectionState extends State<TransactionSection> {
 
   void deleteTransaction(String id) {
     setState(() {
-      transactions.removeWhere((transaction) {
-        return transaction.id == id;
-      });
+      transactions.removeWhere((transaction) => transaction.id == id);
     });
   }
 
