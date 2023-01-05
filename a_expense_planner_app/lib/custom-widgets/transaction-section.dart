@@ -50,7 +50,7 @@ class _TransactionSectionState extends State<TransactionSection> {
       id: DateTime.now().toString(),
       title: transactionInputData.title,
       amount: transactionInputData.amount,
-      date: DateTime.now(),
+      date: transactionInputData.date,
     );
     setState(() {
       transactions.add(newTransaction);
@@ -60,19 +60,18 @@ class _TransactionSectionState extends State<TransactionSection> {
   @override
   Widget build(BuildContext context) {
     widget.addNewTransactionHandler = addNewTransaction;
-
+    Widget transactionList = transactions.isEmpty
+        ? TransactionEmptyList()
+        : TransactionList(transactions: transactions);
     return Container(
       width: double.infinity,
       height: 500,
-      child: transactions.isEmpty
-          ? TransactionEmptyList()
-          : Column(
-              children: [
-                Chart(recentTransactions: _recentTransaction),
-                // TransactionInput(inputHandler: addNewTransaction),
-                TransactionList(transactions: transactions)
-              ],
-            ),
+      child: Column(
+        children: [
+          Chart(recentTransactions: _recentTransaction),
+          transactionList,
+        ],
+      ),
     );
   }
 }
