@@ -92,4 +92,8 @@ This repository is to save the progress of learning Flutter.
 
 <img src="./images/109.%20Improving%20the%20Overall%20Chart.png" width=200>
 
+### 117. Deleting Transactions & Using IconButtons
+
+<img src="./images/117.%20Deleting%20Transactions%20&%20Using%20IconButtons.gif" width=200>
+
 </details>
