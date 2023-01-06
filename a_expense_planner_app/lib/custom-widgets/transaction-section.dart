@@ -72,7 +72,7 @@ class _TransactionSectionState extends State<TransactionSection> {
             transactions: transactions, deleteCallback: deleteTransaction);
     return Container(
       width: double.infinity,
-      height: 500,
+      height: 900,
       child: Column(
         children: [
           Chart(recentTransactions: _recentTransaction),
