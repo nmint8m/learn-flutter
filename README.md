@@ -43,6 +43,8 @@ This repository is to save the progress of learning Flutter.
 
 ## Section 4 - A expense planner app
 
+<img src="./images/115.%20Final%20Polishing.gif" width=200>
+
 <details>
 
 <summary> Screenshots: Section 4 - A expense planner app </summary>
