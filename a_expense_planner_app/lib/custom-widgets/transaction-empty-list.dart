@@ -11,10 +11,8 @@ class TransactionEmptyList extends StatelessWidget {
           'Empty list',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 10,
-        ),
-        Container(
           height: 200,
           child: Image.asset(
             'assets/images/waiting.png',

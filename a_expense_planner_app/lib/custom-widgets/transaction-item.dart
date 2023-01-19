@@ -6,7 +6,7 @@ class TransactionItem extends StatelessWidget {
   final Transaction transaction;
   final void Function(String) deleteCallback;
 
-  TransactionItem({
+  const TransactionItem({
     super.key,
     required this.transaction,
     required this.deleteCallback,
@@ -25,12 +25,12 @@ class TransactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 10,
-      margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+      margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
       child: ListTile(
         leading: CircleAvatar(
           radius: 30,
           child: Padding(
-            padding: EdgeInsets.all(5),
+            padding: const EdgeInsets.all(5),
             child: FittedBox(
               child: Text(
                 _amountText,
@@ -48,7 +48,7 @@ class TransactionItem extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         trailing: IconButton(
-          icon: Icon(Icons.delete),
+          icon: const Icon(Icons.delete),
           color: Theme.of(context).errorColor,
           onPressed: () => deleteCallback(transaction.id),
         ),

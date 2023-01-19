@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import './models/transaction-input-data.dart';
 import './custom-widgets/transaction-section.dart';
-import './custom-widgets/transaction-input.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -93,63 +91,7 @@ class MyApp extends StatelessWidget {
         textTheme: _createTextTheme(),
         errorColor: Colors.red,
       ),
-      home: MyHomePage(),
-    );
-  }
-}
-
-class MyHomePage extends StatelessWidget {
-  final _transactionSection = TransactionSection();
-
-  MyHomePage({super.key});
-
-  void _startAddNewTransaction(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) {
-        return GestureDetector(
-          onTap: () {},
-          behavior: HitTestBehavior.opaque,
-          child: TransactionInput(inputHandler: _addNewTransaction),
-        );
-      },
-    );
-  }
-
-  void _addNewTransaction(TransactionInputData data) {
-    print(data.title);
-    print(data.amount);
-    if (_transactionSection.addNewTransactionHandler != null) {
-      _transactionSection.addNewTransactionHandler!(data);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('An expense planner app'),
-        actions: <Widget>[
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () => _startAddNewTransaction(context),
-          )
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _transactionSection,
-          ],
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
-        onPressed: () => _startAddNewTransaction(context),
-      ),
+      home: const TransactionSection(),
     );
   }
 }

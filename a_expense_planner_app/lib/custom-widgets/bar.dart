@@ -16,11 +16,9 @@ class Bar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text('${weekday.substring(0, 1)}'),
+        Text(weekday.substring(0, 1)),
+        const SizedBox(height: 4),
         SizedBox(
-          height: 4,
-        ),
-        Container(
           height: 60,
           width: 10,
           child: Stack(
@@ -31,7 +29,7 @@ class Bar extends StatelessWidget {
                     color: Theme.of(context).primaryColor,
                   ),
                   color: Theme.of(context).disabledColor,
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
               FractionallySizedBox(
@@ -42,19 +40,19 @@ class Bar extends StatelessWidget {
                       color: Theme.of(context).primaryColor,
                     ),
                     color: Theme.of(context).primaryColor,
-                    borderRadius: BorderRadius.circular(5),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
             ],
           ),
         ),
-        Container(
+        SizedBox(
             height: 20,
             child: FittedBox(
               child: Text('\$ ${total.toStringAsFixed(2)}'),
             )),
-        Text('${percentOfTotal.toStringAsFixed(2)}'),
+        Text(percentOfTotal.toStringAsFixed(2)),
       ],
     );
   }

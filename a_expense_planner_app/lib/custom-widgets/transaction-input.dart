@@ -7,7 +7,7 @@ typedef TransactionInputDataCallback = void Function(TransactionInputData);
 class TransactionInput extends StatefulWidget {
   final TransactionInputDataCallback inputHandler;
 
-  TransactionInput({
+  const TransactionInput({
     super.key,
     required this.inputHandler,
   });
@@ -70,26 +70,22 @@ class _TransactionInputState extends State<TransactionInput> {
   Widget build(BuildContext context) {
     return Card(
       child: Container(
-        padding: EdgeInsets.all(10),
+        padding: const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             TextField(
               keyboardType: TextInputType.text,
-              decoration: InputDecoration(
-                labelText: 'Title',
-              ),
+              decoration: const InputDecoration(labelText: 'Title'),
               controller: _title,
               // onChanged: (value) => _titleInput = value,
             ),
             TextField(
               keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Amount',
-              ),
+              decoration: const InputDecoration(labelText: 'Amount'),
               controller: _amount,
             ),
-            Container(
+            SizedBox(
               height: 70,
               child: Row(children: [
                 Expanded(
@@ -98,15 +94,15 @@ class _TransactionInputState extends State<TransactionInput> {
                       : 'Picked date: ${DateFormat.yMd().format(_date!)}'),
                 ),
                 TextButton(
-                  child: Text(
-                    'Add date',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
                   style: ButtonStyle(
                     foregroundColor: MaterialStateProperty.all(
                         Theme.of(context).primaryColor),
                   ),
                   onPressed: _presentDatePicker,
+                  child: const Text(
+                    'Add date',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 )
               ]),
             ),
@@ -119,13 +115,13 @@ class _TransactionInputState extends State<TransactionInput> {
                 amount: _amountInput,
               )),
               */
-              child: Text(
-                'Add transaction',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
               style: ButtonStyle(
                 foregroundColor: MaterialStateProperty.all(
                     Theme.of(context).textTheme.button?.color),
+              ),
+              child: const Text(
+                'Add transaction',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ],

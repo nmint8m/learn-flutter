@@ -6,7 +6,7 @@ class TransactionList extends StatelessWidget {
   final List<Transaction> transactions;
   final void Function(String) deleteCallback;
 
-  TransactionList({
+  const TransactionList({
     super.key,
     required this.transactions,
     required this.deleteCallback,
@@ -14,17 +14,14 @@ class TransactionList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 700,
-      child: ListView.builder(
-        itemBuilder: (context, index) {
-          return TransactionItem(
-            transaction: transactions[index],
-            deleteCallback: deleteCallback,
-          );
-        },
-        itemCount: transactions.length,
-      ),
+    return ListView.builder(
+      itemBuilder: (context, index) {
+        return TransactionItem(
+          transaction: transactions[index],
+          deleteCallback: deleteCallback,
+        );
+      },
+      itemCount: transactions.length,
     );
     /*
     List<Widget> cards = transactions.map((transaction) {
