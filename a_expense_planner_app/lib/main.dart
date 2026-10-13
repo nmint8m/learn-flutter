@@ -19,7 +19,7 @@ class MyApp extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           )
-          .bodyText2,
+          .bodyMedium,
       titleTextStyle: ThemeData.light()
           .textTheme
           .copyWith(
@@ -29,49 +29,49 @@ class MyApp extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           )
-          .headline6,
+          .titleLarge,
     );
   }
 
   TextTheme _createTextTheme() {
     return ThemeData.light().textTheme.copyWith(
-          headline6: const TextStyle(
+          titleLarge: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 18,
             color: Colors.orange,
           ),
-          subtitle1: const TextStyle(
+          titleMedium: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 16,
             color: Colors.orange,
           ),
-          subtitle2: const TextStyle(
+          titleSmall: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.bold,
             fontSize: 14,
             color: Colors.orange,
           ),
-          bodyText1: const TextStyle(
+          bodyLarge: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 13,
             color: Colors.black,
           ),
-          bodyText2: const TextStyle(
+          bodyMedium: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 12,
             color: Colors.black,
           ),
-          caption: const TextStyle(
+          bodySmall: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 11,
             color: Colors.grey,
           ),
-          button: const TextStyle(
+          labelLarge: const TextStyle(
             fontFamily: 'OpenSans',
             fontWeight: FontWeight.normal,
             fontSize: 11,
@@ -85,11 +85,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        primarySwatch: Colors.orange,
+        colorScheme: ColorScheme.fromSwatch(
+          primarySwatch: Colors.orange,
+          errorColor: Colors.red,
+        ),
         fontFamily: 'Quicksand',
         appBarTheme: _creatAppBarTheme(),
         textTheme: _createTextTheme(),
-        errorColor: Colors.red,
       ),
       home: const TransactionSection(),
     );

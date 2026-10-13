@@ -117,7 +117,7 @@ class _TransactionInputState extends State<TransactionInput> {
               */
               style: ButtonStyle(
                 foregroundColor: MaterialStateProperty.all(
-                    Theme.of(context).textTheme.button?.color),
+                    Theme.of(context).textTheme.labelLarge?.color),
               ),
               child: const Text(
                 'Add transaction',

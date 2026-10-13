@@ -49,7 +49,7 @@ class TransactionItem extends StatelessWidget {
         ),
         trailing: IconButton(
           icon: const Icon(Icons.delete),
-          color: Theme.of(context).errorColor,
+          color: Theme.of(context).colorScheme.error,
           onPressed: () => deleteCallback(transaction.id),
         ),
       ),
