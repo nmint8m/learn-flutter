@@ -95,7 +95,7 @@ class _TransactionInputState extends State<TransactionInput> {
                 ),
                 TextButton(
                   style: ButtonStyle(
-                    foregroundColor: MaterialStateProperty.all(
+                    foregroundColor: WidgetStateProperty.all(
                         Theme.of(context).primaryColor),
                   ),
                   onPressed: _presentDatePicker,
@@ -116,7 +116,7 @@ class _TransactionInputState extends State<TransactionInput> {
               )),
               */
               style: ButtonStyle(
-                foregroundColor: MaterialStateProperty.all(
+                foregroundColor: WidgetStateProperty.all(
                     Theme.of(context).textTheme.labelLarge?.color),
               ),
               child: const Text(

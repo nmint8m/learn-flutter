@@ -116,13 +116,13 @@ class _TransactionSectionState extends State<TransactionSection> {
         MediaQuery.of(context).padding.top -
         appBar.preferredSize.height;
 
-    Widget recentTransaction = Container(
+    Widget recentTransaction = SizedBox(
         height: height * 0.3,
         child: Chart(
           recentTransactions: _recentTransaction,
         ));
 
-    Widget transactionList = Container(
+    Widget transactionList = SizedBox(
       height: height * 0.7,
       child: transactions.isEmpty
           ? const TransactionEmptyList()
@@ -139,7 +139,7 @@ class _TransactionSectionState extends State<TransactionSection> {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Container(
+            SizedBox(
               width: double.infinity,
               child: Column(
                 children: [

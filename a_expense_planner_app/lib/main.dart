@@ -85,13 +85,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSwatch(
-          primarySwatch: Colors.orange,
-          errorColor: Colors.red,
-        ),
         fontFamily: 'Quicksand',
         appBarTheme: _creatAppBarTheme(),
-        textTheme: _createTextTheme(),
+        textTheme: _createTextTheme(), colorScheme: ColorScheme.fromSwatch(primarySwatch: Colors.orange).copyWith(error: Colors.red),
       ),
       home: const TransactionSection(),
     );
