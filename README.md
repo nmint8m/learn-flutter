@@ -99,3 +99,7 @@ This repository is to save the progress of learning Flutter.
 <img src="./images/117.%20Deleting%20Transactions%20&%20Using%20IconButtons.gif" width=200>
 
 </details>
+
+## Bloc
+
+[Recap](bloc.md)
