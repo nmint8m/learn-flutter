@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:injectable/injectable.dart';
 
 import '../sign_up_repository.dart';
 import '../sign_up_state.dart';
@@ -9,6 +10,13 @@ import '../sign_up_state.dart';
 ///     context.read<SignUpCubit>().emailChanged('a@b.com');
 ///
 /// Less code than a Bloc, and the right choice for most forms.
+///
+/// `@injectable` registers this class with get_it as a factory: every
+/// `getIt<SignUpCubit>()` returns a new Cubit. The generator reads the
+/// constructor and fills in the [SignUpRepository] argument from get_it.
+/// The annotation changes nothing when you call the constructor yourself, so
+/// the Cubit tab still builds it by hand.
+@injectable
 class SignUpCubit extends Cubit<SignUpState> {
   SignUpCubit(this._repository) : super(const SignUpState());
 

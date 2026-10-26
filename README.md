@@ -103,3 +103,7 @@ This repository is to save the progress of learning Flutter.
 ## Bloc
 
 [Recap](bloc.md)
+
+## GetIt + Injectable
+
+[Recap](injectable-getit.md)
