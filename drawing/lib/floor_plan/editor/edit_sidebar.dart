@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'floor_edits.dart' show SeatSide, maxBarSeats;
+
 /// The right side bar for editing the selected item's name.
 ///
 /// Give it a key per item (e.g. `ValueKey(ref)`) so the text field starts
@@ -19,6 +21,13 @@ class EditSidebar extends StatefulWidget {
     this.sizeMeters,
     this.maxSizeMeters = 10,
     this.onSizeChanged,
+    this.seatsPerSide,
+    this.squareTable = false,
+    this.onSeatSideChanged,
+    this.rotation,
+    this.onRotationChanged,
+    this.barSeats,
+    this.onBarSeatsChanged,
   });
 
   /// What the item is, e.g. "Table · circle".
@@ -43,6 +52,23 @@ class EditSidebar extends StatefulWidget {
   final ({double width, double height, bool round})? sizeMeters;
   final double maxSizeMeters;
   final void Function({double? width, double? height})? onSizeChanged;
+
+  /// Rounded rectangle and square tables: how many seats each side has (0:
+  /// none). Null hides the seat picture (other items).
+  final Map<SeatSide, int>? seatsPerSide;
+
+  /// Draws the seat picture as a square table with one seat per side.
+  final bool squareTable;
+  final void Function(SeatSide side, {required bool included})?
+  onSeatSideChanged;
+
+  /// The table's rotation, in degrees. Null hides the rotation slider.
+  final double? rotation;
+  final ValueChanged<double>? onRotationChanged;
+
+  /// A bar's number of seats. Null hides the bar picture and seat count.
+  final int? barSeats;
+  final ValueChanged<int>? onBarSeatsChanged;
 
   @override
   State<EditSidebar> createState() => _EditSidebarState();
@@ -82,7 +108,7 @@ class _EditSidebarState extends State<EditSidebar> {
           TextField(
             key: const ValueKey('item-name'),
             controller: _controller,
-            autofocus: true,
+            // No autofocus: the keyboard only opens when the field is tapped.
             decoration: const InputDecoration(
               labelText: 'Name',
               border: OutlineInputBorder(),
@@ -91,6 +117,40 @@ class _EditSidebarState extends State<EditSidebar> {
             onChanged: widget.onNameChanged,
             onSubmitted: (_) => widget.onClose(),
           ),
+          if (widget.seatsPerSide case final seats?) ...[
+            const SizedBox(height: 24),
+            Text('Seats', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              'Tap a side to add or remove its seats.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            _SeatSidePicker(
+              seatsPerSide: seats,
+              square: widget.squareTable,
+              onChanged: (side, {required included}) =>
+                  widget.onSeatSideChanged?.call(side, included: included),
+            ),
+          ],
+          if (widget.barSeats case final seats?) ...[
+            const SizedBox(height: 24),
+            Text('Seats', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+            _BarPreview(seats: seats),
+            const SizedBox(height: 16),
+            _SeatCountField(
+              seats: seats,
+              onChanged: (n) => widget.onBarSeatsChanged?.call(n),
+            ),
+          ],
+          if (widget.rotation case final rotation?) ...[
+            const SizedBox(height: 24),
+            _RotationField(
+              degrees: rotation,
+              onChanged: (value) => widget.onRotationChanged?.call(value),
+            ),
+          ],
           if (widget.walls case final walls?) ...[
             const SizedBox(height: 16),
             // Rebuilt when the wall changes (e.g. after dragging the door
@@ -283,6 +343,344 @@ class _LengthFieldState extends State<_LengthField> {
             tooltip: '$longer by 10 cm',
             icon: const Icon(Icons.add),
             onPressed: _value < _max ? () => _stepBy(_step) : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A picture of the table with its seats, one tap area per side. A side's
+/// seats are green when included and grey when not; tapping the side
+/// switches them.
+class _SeatSidePicker extends StatelessWidget {
+  const _SeatSidePicker({
+    required this.seatsPerSide,
+    required this.square,
+    required this.onChanged,
+  });
+
+  final Map<SeatSide, int> seatsPerSide;
+  final bool square;
+  final void Function(SeatSide side, {required bool included}) onChanged;
+
+  static const _seat = 24.0;
+  static const _band = 40.0; // Depth of each side's tap area.
+
+  /// Seats shown on a side that has none: what it would get if included.
+  int _shownOn(SeatSide side) {
+    final count = seatsPerSide[side] ?? 0;
+    if (count > 0) return count;
+    return square
+        ? 1
+        : switch (side) {
+            SeatSide.top || SeatSide.bottom => 2,
+            SeatSide.left || SeatSide.right => 1,
+          };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final table = square ? const Size(88, 88) : const Size(136, 64);
+    final total = Size(table.width + 2 * _band, table.height + 2 * _band);
+
+    Widget side(SeatSide side) {
+      final included = (seatsPerSide[side] ?? 0) > 0;
+      final horizontal = side == SeatSide.top || side == SeatSide.bottom;
+      final seats = [
+        for (var i = 0; i < _shownOn(side); i++)
+          Container(
+            width: _seat,
+            height: _seat,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: included ? Colors.green : Colors.grey.shade400,
+              border: Border.all(
+                color: included ? Colors.green.shade800 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+      ];
+      return Semantics(
+        button: true,
+        toggled: included,
+        label: '${side.name} seats',
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            key: ValueKey('seat-side-${side.name}'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => onChanged(side, included: !included),
+            child: horizontal
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: seats,
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: seats,
+                  ),
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: SizedBox.fromSize(
+        size: total,
+        child: Stack(
+          children: [
+            Positioned(
+              left: _band,
+              top: _band,
+              width: table.width,
+              height: table.height,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  border: Border.all(color: colors.primary, width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            Positioned(
+              left: _band,
+              top: 0,
+              width: table.width,
+              height: _band,
+              child: side(SeatSide.top),
+            ),
+            Positioned(
+              left: _band,
+              bottom: 0,
+              width: table.width,
+              height: _band,
+              child: side(SeatSide.bottom),
+            ),
+            Positioned(
+              left: 0,
+              top: _band,
+              width: _band,
+              height: table.height,
+              child: side(SeatSide.left),
+            ),
+            Positioned(
+              right: 0,
+              top: _band,
+              width: _band,
+              height: table.height,
+              child: side(SeatSide.right),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The table's rotation: a slider in 15° steps, from 0° to 345°.
+class _RotationField extends StatelessWidget {
+  const _RotationField({required this.degrees, required this.onChanged});
+
+  final double degrees;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final shown = degrees.round() % 360;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Rotation', style: theme.textTheme.titleSmall),
+            ),
+            Text(
+              '$shown°',
+              key: const ValueKey('item-rotation-value'),
+              style: theme.textTheme.titleSmall,
+            ),
+          ],
+        ),
+        Slider(
+          key: const ValueKey('item-rotation'),
+          value: (degrees % 360).clamp(0, 345),
+          max: 345,
+          divisions: 23,
+          label: '$shown°',
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+/// A picture of a bar counter with [seats] seats in a row below it, the
+/// counter split into one stretch per seat.
+class _BarPreview extends StatelessWidget {
+  const _BarPreview({required this.seats});
+
+  final int seats;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Up to 36 px per seat, narrower if the panel is.
+        final perSeat = (constraints.maxWidth / seats).clamp(18.0, 36.0);
+        final width = perSeat * seats;
+        final seat = perSeat * 0.62;
+        return Center(
+          key: const ValueKey('bar-preview'),
+          child: SizedBox(
+            width: width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    border: Border.all(color: colors.primary, width: 1.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < seats; i++) ...[
+                        if (i > 0)
+                          VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            indent: 6,
+                            endIndent: 6,
+                            color: colors.primary,
+                          ),
+                        const Expanded(child: SizedBox()),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    for (var i = 0; i < seats; i++)
+                      Expanded(
+                        child: Center(
+                          child: Container(
+                            key: ValueKey('bar-preview-seat-$i'),
+                            width: seat,
+                            height: seat,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: colors.surfaceContainerHighest,
+                              border: Border.all(color: colors.outline),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A whole number of seats, 1 to [maxBarSeats]: type it, or use − and +.
+class _SeatCountField extends StatefulWidget {
+  const _SeatCountField({required this.seats, required this.onChanged});
+
+  final int seats;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_SeatCountField> createState() => _SeatCountFieldState();
+}
+
+class _SeatCountFieldState extends State<_SeatCountField> {
+  late final _controller = TextEditingController(text: '${widget.seats}');
+  String? _error;
+
+  @override
+  void didUpdateWidget(_SeatCountField old) {
+    super.didUpdateWidget(old);
+    // Keep the text in step when the count changes from − or +.
+    if (widget.seats != old.seats &&
+        int.tryParse(_controller.text) != widget.seats) {
+      _controller.text = '${widget.seats}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _typed(String text) {
+    final n = int.tryParse(text.trim());
+    if (n == null || n < 1 || n > maxBarSeats) {
+      setState(() => _error = 'Enter 1 to $maxBarSeats seats');
+      return;
+    }
+    setState(() => _error = null);
+    widget.onChanged(n);
+  }
+
+  void _step(int by) {
+    final n = (widget.seats + by).clamp(1, maxBarSeats);
+    setState(() {
+      _error = null;
+      _controller.text = '$n';
+    });
+    widget.onChanged(n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: IconButton.outlined(
+            key: const ValueKey('bar-seats-minus'),
+            tooltip: 'One seat fewer',
+            icon: const Icon(Icons.remove),
+            onPressed: widget.seats > 1 ? () => _step(-1) : null,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextField(
+            key: const ValueKey('bar-seats'),
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Number of seats',
+              helperText: 'Up to $maxBarSeats',
+              errorText: _error,
+              errorMaxLines: 2,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: _typed,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: IconButton.outlined(
+            key: const ValueKey('bar-seats-plus'),
+            tooltip: 'One more seat',
+            icon: const Icon(Icons.add),
+            onPressed: widget.seats < maxBarSeats ? () => _step(1) : null,
           ),
         ),
       ],

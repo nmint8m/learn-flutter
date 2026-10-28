@@ -497,6 +497,7 @@ class FloorTable {
     this.rotation = 0,
     this.seatLayout = const SeatLayout(),
     this.statusPerSeat = false,
+    this.bar = false,
   });
 
   factory FloorTable._fromJson(_Json json) {
@@ -513,6 +514,7 @@ class FloorTable {
       rotation: inTable.number('rotation', fallback: 0),
       seatLayout: SeatLayout._fromJson(inTable.optionalObject('seats')),
       statusPerSeat: inTable.boolean('statusPerSeat', fallback: false),
+      bar: inTable.boolean('bar', fallback: false),
     );
   }
 
@@ -537,22 +539,34 @@ class FloorTable {
   /// table id.
   final bool statusPerSeat;
 
+  /// A bar counter: a rounded rectangle with its seats in a row along one
+  /// side (the bottom, before rotation), one stretch of counter per seat.
+  final bool bar;
+
   /// Every seat, positioned relative to the table's center, before rotation.
   List<Seat> get seats => seatLayout.seatsFor(this);
 
-  FloorTable copyWith({String? id, double? x, double? y, String? label}) =>
-      FloorTable(
-        id: id ?? this.id,
-        label: label ?? this.label,
-        shape: shape,
-        x: x ?? this.x,
-        y: y ?? this.y,
-        width: width,
-        height: height,
-        rotation: rotation,
-        seatLayout: seatLayout,
-        statusPerSeat: statusPerSeat,
-      );
+  FloorTable copyWith({
+    String? id,
+    double? x,
+    double? y,
+    String? label,
+    double? width,
+    double? rotation,
+    SeatLayout? seatLayout,
+  }) => FloorTable(
+    id: id ?? this.id,
+    label: label ?? this.label,
+    shape: shape,
+    x: x ?? this.x,
+    y: y ?? this.y,
+    width: width ?? this.width,
+    height: height,
+    rotation: rotation ?? this.rotation,
+    seatLayout: seatLayout ?? this.seatLayout,
+    statusPerSeat: statusPerSeat,
+    bar: bar,
+  );
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -565,6 +579,7 @@ class FloorTable {
     if (rotation != 0) 'rotation': _num(rotation),
     'seats': seatLayout.toJson(),
     if (statusPerSeat) 'statusPerSeat': true,
+    if (bar) 'bar': true,
   };
 }
 
@@ -622,6 +637,16 @@ class SeatLayout {
   final List<Offset> custom;
 
   int get count => top + bottom + left + right + around + custom.length;
+
+  SeatLayout copyWith({int? top, int? bottom, int? left, int? right}) =>
+      SeatLayout(
+        top: top ?? this.top,
+        bottom: bottom ?? this.bottom,
+        left: left ?? this.left,
+        right: right ?? this.right,
+        around: around,
+        custom: custom,
+      );
 
   Map<String, Object?> toJson() => {
     if (top > 0) 'top': top,

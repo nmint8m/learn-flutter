@@ -4,6 +4,7 @@ import 'package:drawing/floor_plan/editor/floor_edits.dart';
 import 'package:drawing/floor_plan/floor_plan.dart';
 import 'package:drawing/floor_plan/floor_plan_page.dart';
 import 'package:drawing/floor_plan/floor_plan_store.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,6 +22,13 @@ class _MemoryRepository implements FloorPlanRepository {
     saved = plan;
     return 'memory';
   }
+}
+
+/// Lets the frame settle. A single tap on the floor only counts once the
+/// double-tap window has passed, so that's waited out first.
+Future<void> settle(WidgetTester tester) async {
+  await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -41,32 +49,32 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: FloorPlanPage(repository: repository)),
     );
-    await tester.pumpAndSettle();
+    await settle(tester);
 
     // 1. Step 1 (Room & Decor): tap Window in the panel. It's added to the
     //    middle of the floor, stuck to the nearest wall, and selected.
     await tester.tap(find.byKey(const ValueKey('palette-window')));
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text('Added Window'), findsOneWidget);
 
     // 2. Edit → Wall: pick the slanted wall.
     await tester.tap(find.byKey(const ValueKey('edit')));
-    await tester.pumpAndSettle();
+    await settle(tester);
     const wallName = 'Outer wall 2 · (20.5, 5.5) → (26, 0)';
     await tester.tap(find.byKey(const ValueKey('item-wall')));
-    await tester.pumpAndSettle();
+    await settle(tester);
     await tester.tap(find.text(wallName).last);
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text(wallName), findsOneWidget);
 
     // 3. Length: 2 m.
     await tester.enterText(find.byKey(const ValueKey('item-length')), '2');
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text('Window · 2 m'), findsWidgets);
 
     // 4. Save, and check what was saved.
     await tester.tap(find.byKey(const ValueKey('save')));
-    await tester.pumpAndSettle();
+    await settle(tester);
     final saved = repository.saved!;
     final window = saved.elements.single as WindowElement;
 

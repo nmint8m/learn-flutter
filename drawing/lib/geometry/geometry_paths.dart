@@ -34,7 +34,9 @@ enum QuarterCircleCorner { topLeft, topRight, bottomLeft, bottomRight }
 /// The radius is capped at half the shorter side, so a large value gives a
 /// pill or circle instead of a broken shape.
 Path roundedRectPath(Rect rect, {double radius = 16}) {
-  final maxRadius = math.min(rect.width, rect.height) / 2;
+  // Never below 0, even for a rect too small to have a size (e.g. a shape
+  // deflated by its border at a tiny zoom).
+  final maxRadius = math.max(0.0, math.min(rect.width, rect.height) / 2);
   final r = radius.clamp(0, maxRadius).toDouble();
   return Path()..addRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)));
 }

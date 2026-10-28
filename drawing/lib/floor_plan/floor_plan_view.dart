@@ -88,6 +88,7 @@ class FloorPlanView extends StatefulWidget {
     this.statusOf,
     this.selected,
     this.onFloorTap,
+    this.onFloorDoubleTap,
     this.onItemDropped,
     this.onSelectedDragStart,
     this.onSelectedDrag,
@@ -108,6 +109,11 @@ class FloorPlanView extends StatefulWidget {
 
   /// Called with the tapped point, in floor units. Null ignores taps.
   final ValueChanged<Offset>? onFloorTap;
+
+  /// Called with the double-tapped point, in floor units. While set, a
+  /// single tap waits a moment (to see if a second tap follows) before
+  /// [onFloorTap] is called.
+  final ValueChanged<Offset>? onFloorDoubleTap;
 
   /// Called when an item from the design panel is dropped on the floor, with
   /// the drop point in floor units. Null means the floor accepts no drops.
@@ -143,6 +149,13 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   /// Kept here, not in build: every update rebuilds the view.
   Offset? _lastDrag;
 
+  /// The area the floor was fitted to when Move mode started, kept until it
+  /// ends.
+  Rect? _moveArea;
+
+  /// Where the current double tap landed, in floor units.
+  Offset? _doubleTapAt;
+
   /// The finger being followed in move mode, so a second finger is ignored.
   int? _dragPointer;
 
@@ -170,6 +183,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :statusOf,
       :selected,
       :onFloorTap,
+      :onFloorDoubleTap,
       :onSelectedDragStart,
       :onSelectedDrag,
       :onSelectedDragEnd,
@@ -189,36 +203,47 @@ class _FloorPlanViewState extends State<FloorPlanView> {
         );
         _transform._viewport = viewport;
 
-        // The whole room: the floor's width and height, widened to any
-        // walls past them. At 100% it fits the view, and taps anywhere on
-        // it reach the page.
+        // The whole room (the floor's width and height, widened to any
+        // walls past them), plus a little space around anything drawn
+        // outside it, like a table beyond the walls. At 100% all of it fits
+        // the view, and taps anywhere on it reach the page.
         final room = roomBounds(plan);
+        final bounds = planContentBounds(plan).expandToInclude(room);
+        // Ignores rounding-sized overhangs (e.g. a door's end at -1e-16 on
+        // the x = 0 wall), which would otherwise change the zoom mid-drag.
+        const tolerance = 0.05;
+        final pastRoom =
+            bounds.left < room.left - tolerance ||
+            bounds.top < room.top - tolerance ||
+            bounds.right > room.right + tolerance ||
+            bounds.bottom > room.bottom + tolerance;
+        // Frozen while moving, so the floor doesn't shift or re-zoom under
+        // the finger when the item being dragged changes what's drawn.
+        final fitted = pastRoom ? bounds.inflate(0.5) : room;
+        final Rect area;
+        if (moving) {
+          area = _moveArea ??= fitted;
+        } else {
+          area = fitted;
+          _moveArea = null;
+        }
 
-        // How many pixels one floor unit takes, so the whole room fits.
+        // How many pixels one floor unit takes, so [area] fits.
         final pixelsPerUnit = math.min(
-          viewport.width / room.width,
-          viewport.height / room.height,
+          viewport.width / area.width,
+          viewport.height / area.height,
         );
-        final roomSize = room.size * pixelsPerUnit;
-        // Where floor point (0, 0) is, before zoom/pan, with the room
+        final areaSize = area.size * pixelsPerUnit;
+        // Where floor point (0, 0) is, before zoom/pan, with [area]
         // centered.
         final floorOrigin =
             Offset(
-              (viewport.width - roomSize.width) / 2,
-              (viewport.height - roomSize.height) / 2,
+              (viewport.width - areaSize.width) / 2,
+              (viewport.height - areaSize.height) / 2,
             ) -
-            room.topLeft * pixelsPerUnit;
-
-        // A little space around anything that reaches past the room (e.g. a
-        // table outside the walls).
-        final bounds = planContentBounds(plan).expandToInclude(room);
-        final content = bounds == room ? bounds : bounds.inflate(0.5);
-        _transform._content = Rect.fromLTRB(
-          floorOrigin.dx + content.left * pixelsPerUnit,
-          floorOrigin.dy + content.top * pixelsPerUnit,
-          floorOrigin.dx + content.right * pixelsPerUnit,
-          floorOrigin.dy + content.bottom * pixelsPerUnit,
-        );
+            area.topLeft * pixelsPerUnit;
+        _transform._content =
+            floorOrigin + area.topLeft * pixelsPerUnit & areaSize;
 
         // Converts a center + size in floor units to a pixel rect.
         Rect toPixels(double x, double y, double width, double height) =>
@@ -228,9 +253,9 @@ class _FloorPlanViewState extends State<FloorPlanView> {
               height: height * pixelsPerUnit,
             );
 
-        // From the room box's pixels (its top-left is the room's top-left)
-        // to floor units.
-        Offset toUnits(Offset local) => local / pixelsPerUnit + room.topLeft;
+        // From the tap box's pixels (its top-left is [area]'s top-left) to
+        // floor units.
+        Offset toUnits(Offset local) => local / pixelsPerUnit + area.topLeft;
 
         void endDrag() {
           _dragPointer = null;
@@ -243,6 +268,17 @@ class _FloorPlanViewState extends State<FloorPlanView> {
           onTapUp: onFloorTap == null
               ? null
               : (details) => onFloorTap(toUnits(details.localPosition)),
+          // Where the second tap of a double tap landed; onDoubleTap itself
+          // has no position.
+          onDoubleTapDown: onFloorDoubleTap == null
+              ? null
+              : (details) => _doubleTapAt = toUnits(details.localPosition),
+          onDoubleTap: onFloorDoubleTap == null
+              ? null
+              : () {
+                  if (_doubleTapAt case final at?) onFloorDoubleTap(at);
+                  _doubleTapAt = null;
+                },
           // Move mode reads the finger directly instead of waiting for a
           // drag gesture, which only starts after ~36 pixels: small nudges
           // count too, and the item follows the finger from the first
@@ -268,7 +304,11 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                     if (event.pointer != _dragPointer) return;
                     final previous = _lastDrag ?? event.localPosition;
                     _lastDrag = event.localPosition;
-                    onSelectedDrag(toUnits(event.localPosition - previous));
+                    // A distance, not a position: no offset for where the
+                    // tap box starts.
+                    onSelectedDrag(
+                      (event.localPosition - previous) / pixelsPerUnit,
+                    );
                   }
                 : null,
             onPointerUp: moving
@@ -283,9 +323,9 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                 : null,
             // Everything below is drawn in floor coordinates, (0, 0) at
             // the floor's corner, so it's shifted to where that is in the
-            // room box.
+            // tap box ([area]).
             child: Transform.translate(
-              offset: -room.topLeft * pixelsPerUnit,
+              offset: -area.topLeft * pixelsPerUnit,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -372,11 +412,19 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                 viewport.height * (1 / FloorViewController.minScale - 1) / 2 +
                 48,
           ),
-          child: Center(
-            child: _dropTarget(
-              context,
-              toUnits,
-              SizedBox.fromSize(size: roomSize, child: floor),
+          child: SizedBox.fromSize(
+            size: viewport,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: floorOrigin.dx + area.left * pixelsPerUnit,
+                  top: floorOrigin.dy + area.top * pixelsPerUnit,
+                  width: area.width * pixelsPerUnit,
+                  height: area.height * pixelsPerUnit,
+                  child: _dropTarget(context, toUnits, floor),
+                ),
+              ],
             ),
           ),
         );
@@ -1117,6 +1165,21 @@ class _TableWidget extends StatelessWidget {
                         '${tableStatus == null ? '' : ', ${tableStatus.label}'}',
             ),
           ),
+          // A bar's counter is split into one stretch per seat.
+          if (table.bar && seats.length > 1)
+            Positioned.fromRect(
+              rect: top,
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _BarSeparatorPainter(
+                    count: seats.length,
+                    color: colors.outline,
+                    strokeWidth: math.max(1, 0.05 * ppu),
+                    inset: 0.25 * ppu,
+                  ),
+                ),
+              ),
+            ),
           // The label stays upright even if the table is rotated, and lets
           // taps through to the table under it.
           Positioned.fromRect(
@@ -1199,4 +1262,39 @@ class _PathClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(_PathClipper oldClipper) => true;
+}
+
+/// Lines across a bar counter, splitting it into [count] equal stretches,
+/// one per seat. [inset] keeps them clear of the rounded ends' edges.
+class _BarSeparatorPainter extends CustomPainter {
+  const _BarSeparatorPainter({
+    required this.count,
+    required this.color,
+    required this.strokeWidth,
+    required this.inset,
+  });
+
+  final int count;
+  final Color color;
+  final double strokeWidth;
+  final double inset;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth;
+    final top = math.min(inset, size.height / 4);
+    for (var i = 1; i < count; i++) {
+      final x = size.width * i / count;
+      canvas.drawLine(Offset(x, top), Offset(x, size.height - top), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BarSeparatorPainter old) =>
+      old.count != count ||
+      old.color != color ||
+      old.strokeWidth != strokeWidth ||
+      old.inset != inset;
 }

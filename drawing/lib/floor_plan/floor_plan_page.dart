@@ -112,13 +112,28 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     }
   }
 
+  /// A single tap selects the item under it and opens its Edit panel
+  /// (outer walls have nothing to edit: they're only selected). A tap on
+  /// empty floor clears the selection.
   void _onFloorTap(FloorPlan plan, Offset at) {
     final hit = hitTestItem(plan, at, tables: _step == DesignStep.tableAndSeat);
     setState(() {
       _selected = hit;
       _moving = false;
       _confirmingRemove = null;
-      if (hit == null) _editing = false;
+      _editing = hit != null && canRename(hit);
+    });
+  }
+
+  /// A double tap selects the item under it and starts moving it.
+  void _onFloorDoubleTap(FloorPlan plan, Offset at) {
+    final hit = hitTestItem(plan, at, tables: _step == DesignStep.tableAndSeat);
+    if (hit == null) return;
+    setState(() {
+      _selected = hit;
+      _moving = true;
+      _editing = false;
+      _confirmingRemove = null;
     });
   }
 
@@ -130,13 +145,23 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       item,
       at ?? Offset(plan.width / 2, plan.height / 2),
     );
-    final added = result.plan;
+    // A new table goes inside the room, at the nearest spot that fits.
+    final added = result.plan.tables.length > plan.tables.length
+        ? placeTableInsideRoom(result.plan, result.plan.tables.last.id)
+        : result.plan;
     setState(() {
       _edited = stickOpenings(added);
       _selected = added.tables.length > plan.tables.length
           ? TableRef(added.tables.last.id)
           : ElementRef(added.elements.length - 1);
       _moving = false;
+      _confirmingRemove = null;
+      // New rounded tables open straight into the Edit panel, to pick their
+      // seats and turn them.
+      _editing =
+          item == PaletteItem.roundedRectTable ||
+          item == PaletteItem.roundedSquareTable ||
+          item == PaletteItem.barTable;
     });
     _showMessage('Added ${result.description}');
   }
@@ -171,7 +196,11 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
 
   /// Removes the selected item, closes the side bar, and offers Undo.
   void _duplicateSelected(FloorPlan plan, FloorItemRef ref) {
-    final (duplicated, copy) = duplicateItem(plan, ref)!;
+    var (duplicated, copy) = duplicateItem(plan, ref)!;
+    // A copied table stays inside the room too.
+    if (copy case TableRef(:final id)) {
+      duplicated = placeTableInsideRoom(duplicated, id);
+    }
     setState(() {
       _edited = stickOpenings(duplicated);
       _selected = copy;
@@ -330,6 +359,9 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                     onFloorTap: _step.editable && !_moving
                         ? (at) => _onFloorTap(plan, at)
                         : null,
+                    onFloorDoubleTap: _step.editable && !_moving
+                        ? (at) => _onFloorDoubleTap(plan, at)
+                        : null,
                     onItemDropped: _step.editable
                         ? (item, at) => _addItem(plan, item, at)
                         : null,
@@ -367,7 +399,12 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                               end,
                               delta,
                             ),
-                            null => moveItem(_edited ?? plan, selected, delta),
+                            // Tables can't be dragged out of the room.
+                            null => moveItemInsideRoom(
+                              _edited ?? plan,
+                              selected,
+                              delta,
+                            ),
                           })
                         : null,
                     onSelectedDragEnd: () {
@@ -450,6 +487,46 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   );
                 }
               },
+              // Rounded rectangle and square tables: seats per side and
+              // rotation.
+              seatsPerSide: switch (sidedTable(plan, selected)) {
+                final table? => {
+                  for (final side in SeatSide.values)
+                    side: seatsOnSide(table, side),
+                },
+                null => null,
+              },
+              squareTable: switch (sidedTable(plan, selected)) {
+                final table? => isSquareTable(table),
+                null => false,
+              },
+              onSeatSideChanged: (side, {required included}) => _change(
+                setSeatSide(
+                  _edited ?? plan,
+                  selected,
+                  side,
+                  included: included,
+                ),
+              ),
+              rotation: (sidedTable(plan, selected) ?? barTable(plan, selected))
+                  ?.rotation,
+              // Bars: the number of seats. A longer bar is nudged back
+              // inside the room if it would poke through a wall.
+              barSeats: barTable(plan, selected)?.seats.length,
+              onBarSeatsChanged: (n) {
+                final current = _edited ?? plan;
+                final resized = setBarSeats(current, selected, n);
+                final id = (selected as TableRef).id;
+                final wasInside = tableInsideRoom(
+                  current,
+                  current.tableById(id)!,
+                );
+                _change(
+                  wasInside ? placeTableInsideRoom(resized, id) : resized,
+                );
+              },
+              onRotationChanged: (degrees) =>
+                  _change(rotateTable(_edited ?? plan, selected, degrees)),
               onLengthChanged: (meters) =>
                   _change(resizeItem(_edited ?? plan, selected, meters)),
               // Fixtures: width and height (or a diameter for plants), up
@@ -504,15 +581,16 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     }
     return '$counts · Pinch to zoom · drag to move · '
         '${switch (_step) {
-          DesignStep.roomAndDecor => 'tap a wall, door, window or fixture to select it',
-          DesignStep.tableAndSeat => 'tap a table to select it',
+          DesignStep.roomAndDecor => 'tap a wall, door, window or fixture to edit it, double-tap to move it',
+          DesignStep.tableAndSeat => 'tap a table to edit it, double-tap to move it',
           DesignStep.review => 'review only: items can\'t be changed',
         }}';
   }
 }
 
 /// A fixed bar above the floor: the selected item's name on the left, and
-/// the Move, Edit, Duplicate, Save and Remove buttons on the right. With
+/// the Edit, Move, Save, Duplicate and Remove buttons (icons only, names in
+/// tooltips) on the right. With
 /// nothing selected the name is blank and the buttons are disabled (null
 /// callbacks).
 ///
@@ -555,19 +633,16 @@ class _SelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return LayoutBuilder(
-      builder: (context, constraints) {
-        // Narrow (e.g. with the Edit side bar open): icons only.
-        final compact = constraints.maxWidth < 760;
-        return _buildBar(theme, compact, constraints.maxWidth);
-      },
+      builder: (context, constraints) => _buildBar(theme, constraints.maxWidth),
     );
   }
 
-  Widget _buildBar(ThemeData theme, bool compact, double width) {
+  Widget _buildBar(ThemeData theme, double width) {
     final colors = theme.colorScheme;
 
-    // The active button (Move while moving, Edit while editing, Remove
-    // while asking) is filled. [color] tints the button (Remove: red).
+    // Icon-only buttons; the name shows as a tooltip. The active button
+    // (Move while moving, Edit while editing, Remove while asking) is
+    // filled. [color] tints the button (Remove: red).
     Widget button({
       required Key key,
       required bool active,
@@ -577,15 +652,10 @@ class _SelectionToolbar extends StatelessWidget {
       Color? color,
     }) {
       final filled = active && onPressed != null;
-      // Icon-only buttons are squarer, so five fit a narrow bar.
-      final size = compact
-          ? ButtonStyle(
-              minimumSize: const WidgetStatePropertyAll(Size(44, 40)),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 10),
-              ),
-            )
-          : null;
+      const size = ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(48, 40)),
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+      );
       final tint = color == null
           ? null
           : filled
@@ -598,39 +668,22 @@ class _SelectionToolbar extends StatelessWidget {
               side: onPressed == null ? null : BorderSide(color: color),
             );
       final style = tint?.merge(size) ?? size;
-      if (compact) {
-        return Tooltip(
-          message: label,
-          child: filled
-              ? FilledButton.tonal(
-                  key: key,
-                  style: style,
-                  onPressed: onPressed,
-                  child: Icon(icon),
-                )
-              : OutlinedButton(
-                  key: key,
-                  style: style,
-                  onPressed: onPressed,
-                  child: Icon(icon),
-                ),
-        );
-      }
-      return filled
-          ? FilledButton.tonalIcon(
-              key: key,
-              style: style,
-              onPressed: onPressed,
-              icon: Icon(icon),
-              label: Text(label),
-            )
-          : OutlinedButton.icon(
-              key: key,
-              style: style,
-              onPressed: onPressed,
-              icon: Icon(icon),
-              label: Text(label),
-            );
+      return Tooltip(
+        message: label,
+        child: filled
+            ? FilledButton.tonal(
+                key: key,
+                style: style,
+                onPressed: onPressed,
+                child: Icon(icon),
+              )
+            : OutlinedButton(
+                key: key,
+                style: style,
+                onPressed: onPressed,
+                child: Icon(icon),
+              ),
+      );
     }
 
     return Material(
@@ -654,10 +707,13 @@ class _SelectionToolbar extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 // Shrinks to fit if even the icons don't (a very narrow
-                // bar), rather than overflowing.
+                // bar), rather than overflowing. Always as tall as a button,
+                // so the bar (and the floor below) never changes height.
                 ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: math.max(0, width - 32),
+                    minHeight: 48,
+                    maxHeight: 48,
                   ),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -665,29 +721,21 @@ class _SelectionToolbar extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         button(
-                          key: const ValueKey('move'),
-                          active: moving,
-                          icon: moving ? Icons.check : Icons.open_with,
-                          label: moving ? 'Done' : 'Move',
-                          onPressed: onMove,
-                        ),
-                        SizedBox(width: compact ? 4 : 8),
-                        button(
                           key: const ValueKey('edit'),
                           active: editing,
                           icon: Icons.edit_outlined,
                           label: 'Edit',
                           onPressed: onEdit,
                         ),
-                        SizedBox(width: compact ? 4 : 8),
+                        const SizedBox(width: 8),
                         button(
-                          key: const ValueKey('duplicate'),
-                          active: false,
-                          icon: Icons.copy_outlined,
-                          label: 'Duplicate',
-                          onPressed: onDuplicate,
+                          key: const ValueKey('move'),
+                          active: moving,
+                          icon: moving ? Icons.check : Icons.open_with,
+                          label: moving ? 'Done' : 'Move',
+                          onPressed: onMove,
                         ),
-                        SizedBox(width: compact ? 4 : 8),
+                        const SizedBox(width: 8),
                         button(
                           key: const ValueKey('save-item'),
                           active: false,
@@ -695,7 +743,29 @@ class _SelectionToolbar extends StatelessWidget {
                           label: 'Save',
                           onPressed: onSave,
                         ),
-                        SizedBox(width: compact ? 4 : 8),
+                        // Splits the buttons that change how the item is
+                        // edited and saved from those that add or remove
+                        // items.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: SizedBox(
+                            key: const ValueKey('bar-separator'),
+                            height: 28,
+                            child: VerticalDivider(
+                              width: 1,
+                              thickness: 1,
+                              color: colors.outlineVariant,
+                            ),
+                          ),
+                        ),
+                        button(
+                          key: const ValueKey('duplicate'),
+                          active: false,
+                          icon: Icons.copy_outlined,
+                          label: 'Duplicate',
+                          onPressed: onDuplicate,
+                        ),
+                        const SizedBox(width: 8),
                         _RemoveQuestion(
                           showing: confirmingRemove,
                           onConfirm: onConfirmRemove,

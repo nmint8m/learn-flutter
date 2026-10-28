@@ -233,6 +233,117 @@ FloorPlan snapItem(FloorPlan plan, FloorItemRef ref) {
   return moveItem(plan, ref, Offset(snap(anchor.dx), snap(anchor.dy)) - anchor);
 }
 
+/// A side of a rectangular table, for its seats.
+enum SeatSide { top, bottom, left, right }
+
+/// The rounded rectangle or rounded square table [ref] points at, or null.
+/// These tables have seats side by side and can be rotated from the Edit
+/// panel.
+FloorTable? sidedTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
+  TableRef(:final id) => switch (plan.tableById(id)) {
+    final table?
+        when table.shape.shape == TableShape.roundedRect && !table.bar =>
+      table,
+    _ => null,
+  },
+  _ => null,
+};
+
+/// Whether [table] is square (a rounded square table).
+bool isSquareTable(FloorTable table) => table.width == table.height;
+
+/// How many seats a side gets when it's switched on: one per side on a
+/// square table; two along each long side and one at each end on a
+/// rectangle.
+int defaultSeatsOnSide(FloorTable table, SeatSide side) => isSquareTable(table)
+    ? 1
+    : switch (side) {
+        SeatSide.top || SeatSide.bottom => 2,
+        SeatSide.left || SeatSide.right => 1,
+      };
+
+/// The number of seats on [side] of [table].
+int seatsOnSide(FloorTable table, SeatSide side) => switch (side) {
+  SeatSide.top => table.seatLayout.top,
+  SeatSide.bottom => table.seatLayout.bottom,
+  SeatSide.left => table.seatLayout.left,
+  SeatSide.right => table.seatLayout.right,
+};
+
+/// [plan] with [side]'s seats on the table switched on (its earlier
+/// number of seats, or [defaultSeatsOnSide]) or off.
+FloorPlan setSeatSide(
+  FloorPlan plan,
+  FloorItemRef ref,
+  SeatSide side, {
+  required bool included,
+}) {
+  final table = sidedTable(plan, ref);
+  if (table == null) return plan;
+  final count = !included
+      ? 0
+      : seatsOnSide(table, side) > 0
+      ? seatsOnSide(table, side)
+      : defaultSeatsOnSide(table, side);
+  final layout = table.seatLayout;
+  final changed = table.copyWith(
+    seatLayout: switch (side) {
+      SeatSide.top => layout.copyWith(top: count),
+      SeatSide.bottom => layout.copyWith(bottom: count),
+      SeatSide.left => layout.copyWith(left: count),
+      SeatSide.right => layout.copyWith(right: count),
+    },
+  );
+  return plan.copyWith(
+    tables: [for (final t in plan.tables) t.id == table.id ? changed : t],
+  );
+}
+
+/// [plan] with the table turned to [degrees] (clockwise, around its center;
+/// kept within 0–360).
+FloorPlan rotateTable(FloorPlan plan, FloorItemRef ref, double degrees) {
+  if (ref case TableRef(:final id)) {
+    final angle = degrees % 360;
+    return plan.copyWith(
+      tables: [
+        for (final t in plan.tables)
+          t.id == id ? t.copyWith(rotation: angle) : t,
+      ],
+    );
+  }
+  return plan;
+}
+
+/// The most seats a bar can have.
+const maxBarSeats = 10;
+
+/// Floor units of counter per bar seat (1 m at 0.5 m per unit).
+const barUnitsPerSeat = 2.0;
+
+/// The bar [ref] points at, or null.
+FloorTable? barTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
+  TableRef(:final id) => switch (plan.tableById(id)) {
+    final table? when table.bar => table,
+    _ => null,
+  },
+  _ => null,
+};
+
+/// [plan] with the bar's seats set to [seats] (1 to [maxBarSeats]), all on
+/// one side. The counter grows or shrinks with them, around its center.
+FloorPlan setBarSeats(FloorPlan plan, FloorItemRef ref, int seats) {
+  final bar = barTable(plan, ref);
+  if (bar == null) return plan;
+  final n = seats.clamp(1, maxBarSeats);
+  final changed = bar.copyWith(
+    width: n * barUnitsPerSeat,
+    seatLayout: SeatLayout(bottom: n),
+  );
+  return plan.copyWith(
+    tables: [for (final t in plan.tables) t.id == bar.id ? changed : t],
+  );
+}
+
 /// Outer walls are the room's shape: they can't be duplicated or removed.
 bool canDuplicateOrRemove(FloorItemRef ref) => ref is! OutlineEdgeRef;
 
@@ -400,7 +511,10 @@ String itemName(FloorPlan plan, FloorItemRef ref) => switch (ref) {
 /// What kind of item it is, e.g. "Table · circle" or "Window". Walls include
 /// their start and end points, e.g. "Wall · (30, 0) → (40, 10)".
 String itemKind(FloorPlan plan, FloorItemRef ref) => switch (ref) {
-  TableRef(:final id) => 'Table · ${plan.tableById(id)?.shape.shape.name}',
+  TableRef(:final id) => switch (plan.tableById(id)) {
+    final t? when t.bar => 'Bar · ${t.seats.length} seats',
+    final t => 'Table · ${t?.shape.shape.name}',
+  },
   OutlineEdgeRef() => 'Outer wall · ${_fromTo(wallPoints(plan, ref)!)}',
   ElementRef(:final index) => switch (plan.elements[index]) {
     WallElement(:final points) => 'Wall · ${_fromTo(points)}',
@@ -693,4 +807,145 @@ Rect planContentBounds(FloorPlan plan) {
     }
   }
   return bounds;
+}
+
+// ---------------------------------------------------------------------------
+// Rule: tables stay inside the room
+// ---------------------------------------------------------------------------
+
+/// How far past a wall a table may poke, in floor units: enough for
+/// positions rounded to one decimal.
+const _wallTolerance = 0.06;
+
+/// Points around [table]'s edge and its seats, in floor units, turned with
+/// the table.
+List<Offset> _tableOutline(FloorTable table) {
+  final center = Offset(table.x, table.y);
+  final turn = table.rotation * math.pi / 180;
+  Offset turned(Offset p) => p == Offset.zero
+      ? p
+      : Offset.fromDirection(p.direction + turn, p.distance);
+  final halfW = table.width / 2;
+  final halfH = table.height / 2;
+  final edge = table.shape.shape == TableShape.circle
+      ? [
+          for (var i = 0; i < 12; i++)
+            Offset.fromDirection(i * math.pi / 6).scale(halfW, halfH),
+        ]
+      : [
+          Offset(-halfW, -halfH),
+          Offset(halfW, -halfH),
+          Offset(halfW, halfH),
+          Offset(-halfW, halfH),
+        ];
+  const r = SeatLayout.seatSize / 2;
+  return [
+    for (final p in edge) center + turned(p),
+    for (final seat in table.seats)
+      for (final d in const [
+        Offset(r, 0),
+        Offset(-r, 0),
+        Offset(0, r),
+        Offset(0, -r),
+      ])
+        center + turned(seat.offset) + d,
+  ];
+}
+
+bool _insidePolygon(Offset p, List<Offset> polygon) {
+  var inside = false;
+  for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    final a = polygon[i];
+    final b = polygon[j];
+    if ((a.dy > p.dy) != (b.dy > p.dy) &&
+        p.dx < (b.dx - a.dx) * (p.dy - a.dy) / (b.dy - a.dy) + a.dx) {
+      inside = !inside;
+    }
+  }
+  if (inside) return true;
+  // Just outside, within rounding of a wall, still counts.
+  for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    if (_distanceToSegment(p, polygon[j], polygon[i]) <= _wallTolerance) {
+      return true;
+    }
+  }
+  return false;
+}
+
+double _distanceToSegment(Offset p, Offset a, Offset b) {
+  final ab = b - a;
+  final lengthSquared = ab.distanceSquared;
+  if (lengthSquared == 0) return (p - a).distance;
+  final t = (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / lengthSquared).clamp(
+    0.0,
+    1.0,
+  );
+  return (p - (a + ab * t)).distance;
+}
+
+/// Whether [table], with its seats, is inside the room's walls.
+bool tableInsideRoom(FloorPlan plan, FloorTable table) {
+  final room = plan.floorOutline;
+  return _tableOutline(table).every((p) => _insidePolygon(p, room));
+}
+
+/// The tables that are (partly) outside the room.
+List<FloorTable> tablesOutsideRoom(FloorPlan plan) => [
+  for (final t in plan.tables)
+    if (!tableInsideRoom(plan, t)) t,
+];
+
+/// [moveItem], but a table inside the room stays inside: a move that would
+/// take it past a wall slides it along the wall instead, or doesn't happen.
+/// A table that is already outside (from an older plan) moves freely, so it
+/// can be brought in.
+FloorPlan moveItemInsideRoom(FloorPlan plan, FloorItemRef ref, Offset delta) {
+  final table = switch (ref) {
+    TableRef(:final id) => plan.tableById(id),
+    _ => null,
+  };
+  if (table == null || !tableInsideRoom(plan, table)) {
+    return moveItem(plan, ref, delta);
+  }
+  for (final step in [delta, Offset(delta.dx, 0), Offset(0, delta.dy)]) {
+    if (step == Offset.zero) continue;
+    final moved = moveItem(plan, ref, step);
+    if (tableInsideRoom(plan, moved.tableById(table.id)!)) return moved;
+  }
+  return plan;
+}
+
+/// [plan] with table [id] moved to the nearest spot inside the room, if it
+/// isn't inside already (e.g. after being added, dropped or copied). Looks
+/// in rings of 0.5 units, up to the room's size; if nowhere fits, the table
+/// stays where it is.
+FloorPlan placeTableInsideRoom(FloorPlan plan, String id) {
+  final table = plan.tableById(id);
+  if (table == null || tableInsideRoom(plan, table)) return plan;
+  final room = roomBounds(plan);
+  final maxRing = (math.max(room.width, room.height) / 0.5).ceil();
+  for (var ring = 1; ring <= maxRing; ring++) {
+    final r = ring * 0.5;
+    // Points around a square ring, nearest (the sides' middles) first.
+    final candidates = <Offset>[
+      for (var i = -ring; i <= ring; i++) ...[
+        Offset(i * 0.5, -r),
+        Offset(i * 0.5, r),
+        Offset(-r, i * 0.5),
+        Offset(r, i * 0.5),
+      ],
+    ]..sort((a, b) => a.distance.compareTo(b.distance));
+    for (final shift in candidates) {
+      final at = table.copyWith(
+        x: roundPosition(table.x + shift.dx),
+        y: roundPosition(table.y + shift.dy),
+      );
+      if (tableInsideRoom(plan, at)) {
+        return plan.copyWith(
+          tables: [for (final t in plan.tables) t.id == id ? at : t],
+        );
+      }
+    }
+  }
+  return plan;
 }

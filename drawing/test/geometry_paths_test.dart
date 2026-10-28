@@ -88,4 +88,10 @@ void main() {
       expect(path.getBounds(), box);
     });
   });
+
+  test('roundedRectPath copes with a rect smaller than nothing', () {
+    // E.g. a tiny shape deflated by its border.
+    final rect = Rect.fromLTRB(0, 0, -0.5, -0.2);
+    expect(() => roundedRectPath(rect, radius: 4), returnsNormally);
+  });
 }

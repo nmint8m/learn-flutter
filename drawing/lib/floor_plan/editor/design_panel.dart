@@ -139,6 +139,8 @@ class _PaletteIcon extends StatelessWidget {
         child: GeometryShape(
           size: switch (item) {
             PaletteItem.roundedRectTable => const Size(30, 16),
+            PaletteItem.roundedSquareTable => const Size.square(22),
+            PaletteItem.barTable => const Size(32, 10),
             PaletteItem.semicircleTable => const Size(30, 15),
             _ => const Size.square(24),
           },

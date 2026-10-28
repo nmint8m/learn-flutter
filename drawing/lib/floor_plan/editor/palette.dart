@@ -22,9 +22,11 @@ enum PaletteItem {
   plant('Plant', PaletteSection.roomAndDecor),
   fixture('Fixture', PaletteSection.roomAndDecor),
   roundedRectTable('Rounded rectangle', PaletteSection.tableAndSeat),
+  roundedSquareTable('Rounded square', PaletteSection.tableAndSeat),
   circleTable('Circle', PaletteSection.tableAndSeat),
   semicircleTable('Semicircle', PaletteSection.tableAndSeat),
-  quarterCircleTable('Quarter circle', PaletteSection.tableAndSeat);
+  quarterCircleTable('Quarter circle', PaletteSection.tableAndSeat),
+  barTable('Bar', PaletteSection.tableAndSeat);
 
   const PaletteItem(this.label, this.section);
 
@@ -33,7 +35,9 @@ enum PaletteItem {
 
   /// The table shape this item adds, or null for room & decor items.
   ShapeSpec? get tableShape => switch (this) {
-    roundedRectTable => const ShapeSpec.roundedRect(),
+    roundedRectTable ||
+    roundedSquareTable ||
+    barTable => const ShapeSpec.roundedRect(),
     circleTable => const ShapeSpec.circle(),
     semicircleTable => const ShapeSpec.semicircle(SemicircleSide.top),
     quarterCircleTable => const ShapeSpec.quarterCircle(
@@ -109,7 +113,34 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
         ),
         description: 'Fixture',
       );
+    case PaletteItem.barTable:
+      // A bar: one row of seats along the counter, each with its own
+      // status. Named "Bar", or "Bar 2", "Bar 3"... if that's taken.
+      final number = nextTableNumber(plan);
+      final labels = {for (final t in plan.tables) t.label};
+      var name = 'Bar';
+      for (var n = 2; labels.contains(name); n++) {
+        name = 'Bar $n';
+      }
+      const seats = 4;
+      final bar = FloorTable(
+        id: 'T$number',
+        label: name,
+        shape: const ShapeSpec.roundedRect(),
+        x: x,
+        y: y,
+        width: seats * 2,
+        height: 2,
+        seatLayout: const SeatLayout(bottom: seats),
+        statusPerSeat: true,
+        bar: true,
+      );
+      return (
+        plan: plan.copyWith(tables: [...plan.tables, bar]),
+        description: name,
+      );
     case PaletteItem.roundedRectTable ||
+        PaletteItem.roundedSquareTable ||
         PaletteItem.circleTable ||
         PaletteItem.semicircleTable ||
         PaletteItem.quarterCircleTable:
@@ -120,9 +151,12 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
         shape: item.tableShape!,
         x: x,
         y: y,
-        width: item == PaletteItem.circleTable ? 3 : 4,
+        width: switch (item) {
+          PaletteItem.circleTable || PaletteItem.roundedSquareTable => 3,
+          _ => 4,
+        },
         height: switch (item) {
-          PaletteItem.circleTable => 3,
+          PaletteItem.circleTable || PaletteItem.roundedSquareTable => 3,
           PaletteItem.quarterCircleTable => 4,
           _ => 2,
         },
@@ -136,7 +170,19 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
 }
 
 SeatLayout _defaultSeats(PaletteItem item) => switch (item) {
-  PaletteItem.roundedRectTable => const SeatLayout(top: 2, bottom: 2),
+  // Six seats: two along each long side, one at each end.
+  PaletteItem.roundedRectTable => const SeatLayout(
+    top: 2,
+    bottom: 2,
+    left: 1,
+    right: 1,
+  ),
+  PaletteItem.roundedSquareTable => const SeatLayout(
+    top: 1,
+    bottom: 1,
+    left: 1,
+    right: 1,
+  ),
   PaletteItem.circleTable => const SeatLayout(around: 4),
   // Dome on top, seats along the flat edge.
   PaletteItem.semicircleTable => const SeatLayout(bottom: 2),

@@ -324,6 +324,148 @@ void main() {
     });
   });
 
+  group('seat sides and rotation', () {
+    // T5 is a 6 × 2.5 rounded rectangle with 3 top, 3 bottom, 1 left, 1 right.
+    const t5 = TableRef('T5');
+
+    test('only rounded rectangle and square tables have sides', () {
+      expect(sidedTable(plan, t5), isNotNull);
+      expect(sidedTable(plan, const TableRef('T2')), isNull); // Circle.
+      expect(sidedTable(plan, ElementRef(doorIndex)), isNull);
+    });
+
+    test('switching a side off and on keeps nothing, then the default', () {
+      final off = setSeatSide(plan, t5, SeatSide.top, included: false);
+      expect(off.tableById('T5')!.seatLayout.top, 0);
+      expect(off.tableById('T5')!.seats, hasLength(5));
+      final on = setSeatSide(off, t5, SeatSide.top, included: true);
+      expect(on.tableById('T5')!.seatLayout.top, 2); // Rectangle default.
+    });
+
+    test('switching on a side that has seats keeps their number', () {
+      final same = setSeatSide(plan, t5, SeatSide.top, included: true);
+      expect(same.tableById('T5')!.seatLayout.top, 3);
+    });
+
+    test('a square table gets one seat per side', () {
+      final square = FloorPlan.parse('''
+        {"id": "p", "width": 10, "height": 10,
+         "tables": [{"id": "T1", "label": "1", "shape": "roundedRect",
+                     "x": 5, "y": 5, "width": 3, "height": 3}]}
+      ''');
+      final on = setSeatSide(
+        square,
+        const TableRef('T1'),
+        SeatSide.top,
+        included: true,
+      );
+      expect(on.tableById('T1')!.seatLayout.top, 1);
+    });
+
+    test('rotation stays within 0–360', () {
+      expect(rotateTable(plan, t5, 90).tableById('T5')!.rotation, 90);
+      expect(rotateTable(plan, t5, 375).tableById('T5')!.rotation, 15);
+      expect(rotateTable(plan, t5, -15).tableById('T5')!.rotation, 345);
+      // Saved and read back.
+      final saved = FloorPlan.parse(rotateTable(plan, t5, 45).encode());
+      expect(saved.tableById('T5')!.rotation, 45);
+    });
+  });
+
+  group('tables inside the room', () {
+    test('which tables are outside the L-shaped room', () {
+      // C1, T1, T2 and T3 sit in the L's cut-out (above y = 12, left of 26).
+      expect(
+        tablesOutsideRoom(plan).map((t) => t.id),
+        containsAll(['C1', 'T1', 'T2']),
+      );
+      expect(tableInsideRoom(plan, plan.tableById('T6')!), isTrue);
+    });
+
+    test('seats count: a table whose seats cross the wall is outside', () {
+      final t6 = plan.tableById('T6')!; // Round, 3.5 across, at (25, 19.5).
+      // 1.75 + seats (0.15 gap + 0.8 seat) ≈ 2.7 from the center: at
+      // y = 21.5 the seats reach past the wall at 24.
+      final low = t6.copyWith(y: 21.5);
+      expect(tableInsideRoom(plan, low), isFalse);
+    });
+
+    test('a turned table is checked as turned', () {
+      final square = FloorPlan.parse('''
+        {"id": "p", "width": 10, "height": 10,
+         "tables": [{"id": "T1", "label": "1", "shape": "rect",
+                     "x": 5, "y": 1.3, "width": 2, "height": 2}]}
+      ''');
+      final t = square.tableById('T1')!;
+      expect(tableInsideRoom(square, t), isTrue);
+      // Turned 45°, its corners reach 1.41 up: past the wall at y = 0.
+      expect(tableInsideRoom(square, t.copyWith(rotation: 45)), isFalse);
+    });
+
+    test('moves into a wall slide along it, or stop', () {
+      const t6 = TableRef('T6');
+      final down = moveItemInsideRoom(plan, t6, const Offset(0, 10));
+      expect(down.tableById('T6')!.y, 19.5); // Can't go down at all.
+      final slide = moveItemInsideRoom(plan, t6, const Offset(2, 10));
+      expect(slide.tableById('T6')!.x, 27); // Only the sideways part.
+    });
+
+    test('a table already outside moves freely, to be brought in', () {
+      final moved = moveItemInsideRoom(
+        plan,
+        const TableRef('T1'),
+        const Offset(0, 5),
+      );
+      expect(moved.tableById('T1')!.y, 15);
+    });
+
+    test('placeTableInsideRoom finds the nearest spot inside', () {
+      final placed = placeTableInsideRoom(plan, 'T2'); // At (10.5, 4).
+      final t2 = placed.tableById('T2')!;
+      expect(tableInsideRoom(placed, t2), isTrue);
+      expect(t2.x, closeTo(10.5, 0.01)); // Straight down is nearest.
+      expect(t2.y, greaterThan(12));
+      // A table already inside stays put.
+      expect(placeTableInsideRoom(plan, 'T6'), same(plan));
+    });
+  });
+
+  group('bars', () {
+    final withBar = FloorPlan.parse('''
+      {"id": "p", "width": 40, "height": 24,
+       "tables": [{"id": "T1", "label": "Bar", "shape": "roundedRect",
+                   "x": 20, "y": 12, "width": 8, "height": 2,
+                   "seats": {"bottom": 4}, "statusPerSeat": true,
+                   "bar": true}]}
+    ''');
+    const ref = TableRef('T1');
+
+    test('read and written as a bar', () {
+      expect(barTable(withBar, ref), isNotNull);
+      expect(sidedTable(withBar, ref), isNull);
+      final again = FloorPlan.parse(withBar.encode());
+      expect(again.tableById('T1')!.bar, isTrue);
+      // Older plans without "bar" aren't bars.
+      expect(barTable(plan, const TableRef('BAR')), isNull);
+    });
+
+    test('setBarSeats keeps one row and the center', () {
+      final six = setBarSeats(withBar, ref, 6).tableById('T1')!;
+      expect(six.seatLayout.bottom, 6);
+      expect(six.seatLayout.top + six.seatLayout.left, 0);
+      expect(six.width, 12);
+      expect((six.x, six.y), (20, 12));
+      // Clamped to 1–10.
+      expect(setBarSeats(withBar, ref, 15).tableById('T1')!.seats.length, 10);
+      expect(setBarSeats(withBar, ref, 0).tableById('T1')!.seats.length, 1);
+    });
+
+    test('a duplicated bar is still a bar', () {
+      final (copied, copy) = duplicateItem(withBar, ref)!;
+      expect(barTable(copied, copy), isNotNull);
+    });
+  });
+
   test('renameItem changes the name', () {
     final renamed = renameItem(plan, ElementRef(doorIndex), 'Front door');
     expect(itemName(renamed, ElementRef(doorIndex)), 'Front door');
