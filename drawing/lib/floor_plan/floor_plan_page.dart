@@ -46,6 +46,15 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   DesignStep _step = DesignStep.roomAndDecor;
   FloorItemRef? _selected;
 
+  /// The floor's zoom and pan, shared with the zoom buttons.
+  final _view = FloorViewController();
+
+  @override
+  void dispose() {
+    _view.dispose();
+    super.dispose();
+  }
+
   /// Move mode: zoom and pan are frozen, and dragging moves [_selected].
   bool _moving = false;
 
@@ -72,6 +81,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     return _loadedStuck!;
   }
 
+  /// The item whose "Remove item?" question is showing, if any. Kept as the
+  /// item, not a flag, so selecting another item hides the question.
+  FloorItemRef? _confirmingRemove;
+
   /// Whether the right side bar for renaming [_selected] is open.
   bool _editing = false;
   bool _saving = false;
@@ -89,8 +102,14 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       _step = step;
       _selected = null;
       _moving = false;
+      _confirmingRemove = null;
       _editing = false;
     });
+    // Review shows the whole floor, fitted to the screen: after the next
+    // layout, as hiding the panel and rulers changes the view's size.
+    if (step == DesignStep.review) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _view.fit());
+    }
   }
 
   void _onFloorTap(FloorPlan plan, Offset at) {
@@ -98,6 +117,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     setState(() {
       _selected = hit;
       _moving = false;
+      _confirmingRemove = null;
       if (hit == null) _editing = false;
     });
   }
@@ -150,12 +170,29 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   /// Removes the selected item, closes the side bar, and offers Undo.
-  void _removeSelected(FloorPlan plan, FloorItemRef ref) {
+  void _duplicateSelected(FloorPlan plan, FloorItemRef ref) {
+    final (duplicated, copy) = duplicateItem(plan, ref)!;
+    setState(() {
+      _edited = stickOpenings(duplicated);
+      _selected = copy;
+      _moving = false;
+      _confirmingRemove = null;
+    });
+    _showMessage('Duplicated ${_shortName(plan, ref)}');
+  }
+
+  /// The item's name, or what it is ("Door") if it has none.
+  String _shortName(FloorPlan plan, FloorItemRef ref) {
     final name = itemName(plan, ref);
-    final what = name.isEmpty ? itemKind(plan, ref).split(' · ').first : name;
+    return name.isEmpty ? itemKind(plan, ref).split(' · ').first : name;
+  }
+
+  void _removeSelected(FloorPlan plan, FloorItemRef ref) {
+    final what = _shortName(plan, ref);
     setState(() {
       _edited = stickOpenings(removeItem(plan, ref));
       _selected = null;
+      _confirmingRemove = null;
       _editing = false;
       _moving = false;
     });
@@ -264,7 +301,24 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                           _moving = false;
                         })
                       : null,
+                  onDuplicate: selectedExists && canDuplicateOrRemove(selected)
+                      ? () => _duplicateSelected(_edited ?? plan, selected)
+                      : null,
                   onSave: selectedExists && !_saving ? () => _save(plan) : null,
+                  onRemove: selectedExists && canDuplicateOrRemove(selected)
+                      ? () => setState(() {
+                          _confirmingRemove = _confirmingRemove == selected
+                              ? null
+                              : selected;
+                          _moving = false;
+                        })
+                      : null,
+                  confirmingRemove:
+                      selectedExists && _confirmingRemove == selected,
+                  onConfirmRemove: () =>
+                      _removeSelected(_edited ?? plan, selected!),
+                  onCancelRemove: () =>
+                      setState(() => _confirmingRemove = null),
                 ),
               ),
               Expanded(
@@ -325,19 +379,30 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                       _draggedEnd = null;
                       _openingDragPoint = null;
                     },
-                    // Step 1 is about the room: tables are hidden and
-                    // rulers help place walls and decor.
+                    // Step 1 is about the room: tables are hidden. The
+                    // rulers show in every step.
                     showTables: _step != DesignStep.roomAndDecor,
-                    showRulers: _step == DesignStep.roomAndDecor,
+                    showRulers: true,
+                    controller: _view,
                   ),
                 ),
               ),
+              // Bottom bar: the hint on the left, zoom buttons on the right.
               Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(
-                  _hint(plan),
-                  textAlign: TextAlign.center,
-                  key: const ValueKey('hint'),
+                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _hint(plan),
+                        key: const ValueKey('hint'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Zoom is frozen while moving an item, like pinching.
+                    _ZoomButtons(controller: _view, enabled: !_moving),
+                  ],
                 ),
               ),
             ],
@@ -354,7 +419,6 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
               onNameChanged: (name) =>
                   _change(renameItem(_edited ?? plan, selected, name)),
               onClose: () => setState(() => _editing = false),
-              onRemove: () => _removeSelected(_edited ?? plan, selected),
               lengthMeters: itemLengthMeters(plan, selected),
               // Doors and windows: which wall they're on.
               walls: switch (selected) {
@@ -448,8 +512,12 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
 }
 
 /// A fixed bar above the floor: the selected item's name on the left, and
-/// the Move, Edit and Save buttons on the right. With nothing selected the
-/// name is blank and the buttons are disabled (null callbacks).
+/// the Move, Edit, Duplicate, Save and Remove buttons on the right. With
+/// nothing selected the name is blank and the buttons are disabled (null
+/// callbacks).
+///
+/// Remove asks first: a "Remove item?" card floats under it, over the
+/// floor, with round ✓ and ✕ buttons.
 class _SelectionToolbar extends StatelessWidget {
   const _SelectionToolbar({
     required this.title,
@@ -457,7 +525,12 @@ class _SelectionToolbar extends StatelessWidget {
     required this.editing,
     required this.onMove,
     required this.onEdit,
+    required this.onDuplicate,
     required this.onSave,
+    required this.onRemove,
+    required this.confirmingRemove,
+    required this.onConfirmRemove,
+    required this.onCancelRemove,
   });
 
   final String title;
@@ -467,7 +540,16 @@ class _SelectionToolbar extends StatelessWidget {
 
   /// Null also for items without a name (outer walls).
   final VoidCallback? onEdit;
+
+  /// Null also for outer walls, which can't be copied or removed.
+  final VoidCallback? onDuplicate;
   final VoidCallback? onSave;
+  final VoidCallback? onRemove;
+
+  /// Whether the "Remove item?" question is showing.
+  final bool confirmingRemove;
+  final VoidCallback onConfirmRemove;
+  final VoidCallback onCancelRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -475,33 +557,60 @@ class _SelectionToolbar extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Narrow (e.g. with the Edit side bar open): icons only.
-        final compact = constraints.maxWidth < 560;
-        return _buildBar(theme, compact);
+        final compact = constraints.maxWidth < 760;
+        return _buildBar(theme, compact, constraints.maxWidth);
       },
     );
   }
 
-  Widget _buildBar(ThemeData theme, bool compact) {
-    // The active button (Move while moving, Edit while editing) is filled.
+  Widget _buildBar(ThemeData theme, bool compact, double width) {
+    final colors = theme.colorScheme;
+
+    // The active button (Move while moving, Edit while editing, Remove
+    // while asking) is filled. [color] tints the button (Remove: red).
     Widget button({
       required Key key,
       required bool active,
       required IconData icon,
       required String label,
       required VoidCallback? onPressed,
+      Color? color,
     }) {
       final filled = active && onPressed != null;
+      // Icon-only buttons are squarer, so five fit a narrow bar.
+      final size = compact
+          ? ButtonStyle(
+              minimumSize: const WidgetStatePropertyAll(Size(44, 40)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 10),
+              ),
+            )
+          : null;
+      final tint = color == null
+          ? null
+          : filled
+          ? FilledButton.styleFrom(
+              backgroundColor: colors.errorContainer,
+              foregroundColor: colors.onErrorContainer,
+            )
+          : OutlinedButton.styleFrom(
+              foregroundColor: color,
+              side: onPressed == null ? null : BorderSide(color: color),
+            );
+      final style = tint?.merge(size) ?? size;
       if (compact) {
         return Tooltip(
           message: label,
           child: filled
               ? FilledButton.tonal(
                   key: key,
+                  style: style,
                   onPressed: onPressed,
                   child: Icon(icon),
                 )
               : OutlinedButton(
                   key: key,
+                  style: style,
                   onPressed: onPressed,
                   child: Icon(icon),
                 ),
@@ -510,12 +619,14 @@ class _SelectionToolbar extends StatelessWidget {
       return filled
           ? FilledButton.tonalIcon(
               key: key,
+              style: style,
               onPressed: onPressed,
               icon: Icon(icon),
               label: Text(label),
             )
           : OutlinedButton.icon(
               key: key,
+              style: style,
               onPressed: onPressed,
               icon: Icon(icon),
               label: Text(label),
@@ -524,46 +635,232 @@ class _SelectionToolbar extends StatelessWidget {
 
     return Material(
       borderRadius: BorderRadius.circular(12),
-      color: theme.colorScheme.surfaceContainerLow,
+      color: colors.surfaceContainerLow,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(
-              child: Text(
-                title,
-                key: const ValueKey('selection-title'),
-                style: theme.textTheme.titleSmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            button(
-              key: const ValueKey('move'),
-              active: moving,
-              icon: moving ? Icons.check : Icons.open_with,
-              label: moving ? 'Done' : 'Move',
-              onPressed: onMove,
-            ),
-            const SizedBox(width: 8),
-            button(
-              key: const ValueKey('edit'),
-              active: editing,
-              icon: Icons.edit_outlined,
-              label: 'Edit',
-              onPressed: onEdit,
-            ),
-            const SizedBox(width: 8),
-            button(
-              key: const ValueKey('save-item'),
-              active: false,
-              icon: Icons.save_outlined,
-              label: 'Save',
-              onPressed: onSave,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    key: const ValueKey('selection-title'),
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Shrinks to fit if even the icons don't (a very narrow
+                // bar), rather than overflowing.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(0, width - 32),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        button(
+                          key: const ValueKey('move'),
+                          active: moving,
+                          icon: moving ? Icons.check : Icons.open_with,
+                          label: moving ? 'Done' : 'Move',
+                          onPressed: onMove,
+                        ),
+                        SizedBox(width: compact ? 4 : 8),
+                        button(
+                          key: const ValueKey('edit'),
+                          active: editing,
+                          icon: Icons.edit_outlined,
+                          label: 'Edit',
+                          onPressed: onEdit,
+                        ),
+                        SizedBox(width: compact ? 4 : 8),
+                        button(
+                          key: const ValueKey('duplicate'),
+                          active: false,
+                          icon: Icons.copy_outlined,
+                          label: 'Duplicate',
+                          onPressed: onDuplicate,
+                        ),
+                        SizedBox(width: compact ? 4 : 8),
+                        button(
+                          key: const ValueKey('save-item'),
+                          active: false,
+                          icon: Icons.save_outlined,
+                          label: 'Save',
+                          onPressed: onSave,
+                        ),
+                        SizedBox(width: compact ? 4 : 8),
+                        _RemoveQuestion(
+                          showing: confirmingRemove,
+                          onConfirm: onConfirmRemove,
+                          onCancel: onCancelRemove,
+                          child: button(
+                            key: const ValueKey('remove-item'),
+                            active: confirmingRemove,
+                            icon: Icons.delete_outline,
+                            label: 'Remove',
+                            onPressed: onRemove,
+                            color: colors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Floats a "Remove item?" card with round ✓ and ✕ buttons under [child]
+/// (the Remove button) while [showing], above everything else, so the
+/// floor below doesn't move.
+class _RemoveQuestion extends StatefulWidget {
+  const _RemoveQuestion({
+    required this.showing,
+    required this.onConfirm,
+    required this.onCancel,
+    required this.child,
+  });
+
+  final bool showing;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+  final Widget child;
+
+  @override
+  State<_RemoveQuestion> createState() => _RemoveQuestionState();
+}
+
+class _RemoveQuestionState extends State<_RemoveQuestion> {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController()..show();
+
+  @override
+  Widget build(BuildContext context) {
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) {
+        if (!widget.showing) return const SizedBox.shrink();
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: CompositedTransformFollower(
+            link: _link,
+            showWhenUnlinked: false,
+            // Its top-right corner just under the button's bottom-right.
+            targetAnchor: Alignment.bottomRight,
+            followerAnchor: Alignment.topRight,
+            offset: const Offset(0, 8),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 150),
+              builder: (context, t, child) => Opacity(
+                opacity: t,
+                child: Transform.scale(
+                  scale: 0.9 + 0.1 * t,
+                  alignment: Alignment.topRight,
+                  child: child,
+                ),
+              ),
+              child: Material(
+                key: const ValueKey('remove-question'),
+                elevation: 6,
+                borderRadius: BorderRadius.circular(16),
+                color: colors.surfaceContainerHigh,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Remove item?',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.error,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton.filled(
+                        key: const ValueKey('confirm-remove'),
+                        tooltip: 'Remove',
+                        style: IconButton.styleFrom(
+                          backgroundColor: colors.error,
+                          foregroundColor: colors.onError,
+                        ),
+                        icon: const Icon(Icons.check),
+                        onPressed: widget.onConfirm,
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton.outlined(
+                        key: const ValueKey('cancel-remove'),
+                        tooltip: 'Keep',
+                        icon: const Icon(Icons.close),
+                        onPressed: widget.onCancel,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(link: _link, child: widget.child),
+    );
+  }
+}
+
+/// Zoom out, the zoom level, and zoom in.
+class _ZoomButtons extends StatelessWidget {
+  const _ZoomButtons({required this.controller, required this.enabled});
+
+  final FloorViewController controller;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: const ValueKey('zoom-out'),
+            tooltip: 'Zoom out',
+            icon: const Icon(Icons.zoom_out),
+            onPressed: enabled && controller.canZoomOut
+                ? controller.zoomOut
+                : null,
+          ),
+          SizedBox(
+            width: 48,
+            child: Text(
+              '${(controller.scale * 100).round()}%',
+              key: const ValueKey('zoom-level'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('zoom-in'),
+            tooltip: 'Zoom in',
+            icon: const Icon(Icons.zoom_in),
+            onPressed: enabled && controller.canZoomIn
+                ? controller.zoomIn
+                : null,
+          ),
+        ],
       ),
     );
   }

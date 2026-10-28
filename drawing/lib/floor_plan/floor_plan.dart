@@ -540,18 +540,19 @@ class FloorTable {
   /// Every seat, positioned relative to the table's center, before rotation.
   List<Seat> get seats => seatLayout.seatsFor(this);
 
-  FloorTable copyWith({double? x, double? y, String? label}) => FloorTable(
-    id: id,
-    label: label ?? this.label,
-    shape: shape,
-    x: x ?? this.x,
-    y: y ?? this.y,
-    width: width,
-    height: height,
-    rotation: rotation,
-    seatLayout: seatLayout,
-    statusPerSeat: statusPerSeat,
-  );
+  FloorTable copyWith({String? id, double? x, double? y, String? label}) =>
+      FloorTable(
+        id: id ?? this.id,
+        label: label ?? this.label,
+        shape: shape,
+        x: x ?? this.x,
+        y: y ?? this.y,
+        width: width,
+        height: height,
+        rotation: rotation,
+        seatLayout: seatLayout,
+        statusPerSeat: statusPerSeat,
+      );
 
   Map<String, Object?> toJson() => {
     'id': id,

@@ -60,7 +60,13 @@ void main() {
   // The selection bar is always there; with nothing selected its buttons
   // are disabled and the name is blank.
   void expectNothingSelected(WidgetTester tester) {
-    for (final key in ['move', 'edit', 'save-item']) {
+    for (final key in [
+      'move',
+      'edit',
+      'duplicate',
+      'save-item',
+      'remove-item',
+    ]) {
       final button = tester.widget<ButtonStyleButton>(
         find.byKey(ValueKey(key)),
       );
@@ -119,9 +125,7 @@ void main() {
     expectNothingSelected(tester);
   });
 
-  testWidgets('step 1 hides tables and shows rulers; step 2 the reverse', (
-    tester,
-  ) async {
+  testWidgets('step 1 hides tables; rulers show in every step', (tester) async {
     final topRuler = find.byKey(const ValueKey('ruler-top'));
     final leftRuler = find.byKey(const ValueKey('ruler-left'));
     await openPage(tester);
@@ -140,12 +144,13 @@ void main() {
 
     await goToStep(tester, 'tableAndSeat');
     expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
-    expect(topRuler, findsNothing);
-    expect(leftRuler, findsNothing);
+    expect(topRuler, findsOneWidget);
+    expect(leftRuler, findsOneWidget);
 
     await goToStep(tester, 'review');
     expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
-    expect(topRuler, findsNothing);
+    expect(topRuler, findsOneWidget);
+    expect(leftRuler, findsOneWidget);
   });
 
   testWidgets('the rulers sit beside the floor, not on it', (tester) async {
@@ -175,6 +180,176 @@ void main() {
     expect(name.right, lessThanOrEqualTo(move.left));
     expect(name.top, lessThan(ruler.top));
     expect(tester.widget<ButtonStyleButton>(moveButton).onPressed, isNotNull);
+  });
+
+  testWidgets('bottom bar: hint on the left, zoom buttons on the right', (
+    tester,
+  ) async {
+    final zoomIn = find.byKey(const ValueKey('zoom-in'));
+    final zoomOut = find.byKey(const ValueKey('zoom-out'));
+    String level() =>
+        tester.widget<Text>(find.byKey(const ValueKey('zoom-level'))).data!;
+    bool enabled(Finder f) => tester.widget<IconButton>(f).onPressed != null;
+    Rect floor() => tester.getRect(find.byType(DragTarget<PaletteItem>));
+    await openPage(tester);
+
+    final hint = tester.getRect(find.byKey(const ValueKey('hint')));
+    expect(hint.right, lessThanOrEqualTo(tester.getRect(zoomOut).left));
+    expect(hint.top, greaterThan(floor().bottom));
+
+    // The floor starts at 100%: fitted to the view.
+    expect(level(), '100%');
+    final before = floor();
+
+    // Zoom in: bigger, around the middle of the view.
+    await tester.tap(zoomIn);
+    await tester.pumpAndSettle();
+    expect(level(), '150%');
+    expect(floor().width, closeTo(before.width * 1.5, 0.01));
+    expect(floor().center.dx, closeTo(before.center.dx, 0.01));
+
+    // Up to 600% at most.
+    final up = <String>[];
+    for (var i = 0; i < 10 && enabled(zoomIn); i++) {
+      await tester.tap(zoomIn);
+      await tester.pumpAndSettle();
+      up.add(level());
+    }
+    expect(up, ['200%', '300%', '400%', '600%']);
+
+    // Down to 25% at least: smaller than the view, still centered.
+    final down = <String>[];
+    for (var i = 0; i < 10 && enabled(zoomOut); i++) {
+      await tester.tap(zoomOut);
+      await tester.pumpAndSettle();
+      down.add(level());
+    }
+    expect(down, ['400%', '300%', '200%', '150%', '100%', '75%', '50%', '25%']);
+    expect(floor().width, closeTo(before.width / 4, 0.01));
+    expect(floor().center.dx, closeTo(before.center.dx, 0.01));
+    expect(floor().center.dy, closeTo(before.center.dy, 0.01));
+
+    // And back to 100%: the floor fits the view again.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(zoomIn);
+      await tester.pumpAndSettle();
+    }
+    expect(level(), '100%');
+    expect(floor().width, closeTo(before.width, 0.01));
+  });
+
+  testWidgets('Review shows the whole floor', (tester) async {
+    String level() =>
+        tester.widget<Text>(find.byKey(const ValueKey('zoom-level'))).data!;
+    Rect view() => tester.getRect(find.byType(InteractiveViewer));
+    bool allTablesShown() =>
+        [for (final t in plan.tables) find.byKey(ValueKey('table-${t.id}'))]
+            .every((table) => view().contains(tester.getRect(table).center));
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+
+    await tester.tap(find.byKey(const ValueKey('zoom-in')));
+    await tester.tap(find.byKey(const ValueKey('zoom-in')));
+    await tester.pumpAndSettle();
+    expect(level(), '200%');
+    expect(allTablesShown(), isFalse);
+
+    await goToStep(tester, 'review');
+    expect(level(), '100%');
+    expect(allTablesShown(), isTrue);
+  });
+
+  testWidgets('Review zooms out to show tables past the room', (tester) async {
+    // Table T1 sits 6 units right of the room's right wall.
+    repository = _MemoryRepository(
+      FloorPlan.parse('''
+        {"id": "p", "width": 40, "height": 24,
+         "tables": [{"id": "T1", "label": "1", "shape": "rect",
+                     "x": 46, "y": 12, "width": 2, "height": 2}]}
+      '''),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: FloorPlanPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    await goToStep(tester, 'tableAndSeat');
+    final view = tester.getRect(find.byType(InteractiveViewer));
+    final table = find.byKey(const ValueKey('table-T1'));
+    expect(view.contains(tester.getRect(table).center), isFalse);
+
+    await goToStep(tester, 'review');
+    final level = tester
+        .widget<Text>(find.byKey(const ValueKey('zoom-level')))
+        .data!;
+    expect(level, isNot('100%'));
+    final reviewView = tester.getRect(find.byType(InteractiveViewer));
+    expect(reviewView.contains(tester.getRect(table).topRight), isTrue);
+  });
+
+  testWidgets('100% fits the whole room, walls past the floor included', (
+    tester,
+  ) async {
+    repository = _MemoryRepository(
+      FloorPlan.parse('''
+        {"id": "p", "width": 40, "height": 24,
+         "outline": [[0, 0], [47, 0], [47, 24], [0, 24]]}
+      '''),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: FloorPlanPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    final view = tester.getRect(find.byType(InteractiveViewer));
+    final room = tester.getRect(find.byType(DragTarget<PaletteItem>));
+    expect(room.width / room.height, closeTo(47 / 24, 0.01));
+    expect(view.left, lessThanOrEqualTo(room.left));
+    expect(room.right, lessThanOrEqualTo(view.right + 0.01));
+  });
+
+  testWidgets('walls and windows past the floor\'s width can be tapped', (
+    tester,
+  ) async {
+    // Like the saved room: the right wall at x = 47, past the 40-unit width,
+    // with a window on it.
+    repository = _MemoryRepository(
+      FloorPlan.parse('''
+        {"id": "p", "width": 40, "height": 24,
+         "outline": [[0, 0], [47, 0], [47, 24], [0, 24]],
+         "elements": [{"type": "window", "x": 47, "y": 6, "width": 3,
+                       "angle": 90}]}
+      '''),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: FloorPlanPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    // The room box now spans x 0..47.
+    Offset at(Offset units) {
+      final room = tester.getRect(find.byType(DragTarget<PaletteItem>));
+      return room.topLeft + units * (room.width / 47);
+    }
+
+    await tester.tapAt(at(const Offset(46.9, 6)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Window · 1.5 m'), findsWidgets);
+
+    await tester.tapAt(at(const Offset(46.9, 18)));
+    await tester.pumpAndSettle();
+    expect(find.text('Outer wall · (47, 0) → (47, 24)'), findsOneWidget);
+  });
+
+  testWidgets('zoom buttons are frozen in Move mode', (tester) async {
+    await openPage(tester);
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    await tester.tap(moveButton);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const ValueKey('zoom-in')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('step 1 selects doors', (tester) async {
@@ -273,24 +448,43 @@ void main() {
     expect(find.text('Saved to memory'), findsOneWidget);
   });
 
-  testWidgets('Remove in the Edit panel removes the item, with Undo', (
+  testWidgets('Remove asks first, then removes the item, with Undo', (
     tester,
   ) async {
     final removeButton = find.byKey(const ValueKey('remove-item'));
+    final question = find.text('Remove item?');
+    final confirm = find.byKey(const ValueKey('confirm-remove'));
+    final cancel = find.byKey(const ValueKey('cancel-remove'));
     final table1 = find.byKey(const ValueKey('table-T1'));
     await openPage(tester);
     await goToStep(tester, 'tableAndSeat');
 
     await tester.tap(table1);
     await tester.pumpAndSettle();
+    // The Edit panel no longer has a Remove button.
     await tester.tap(editButton);
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('item-name')), findsOneWidget);
+    expect(removeButton, findsOneWidget); // Only the one in the bar.
+
+    // Remove → the question; ✕ keeps the table.
+    expect(question, findsNothing);
     await tester.tap(removeButton);
     await tester.pumpAndSettle();
+    expect(question, findsOneWidget);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    expect(question, findsNothing);
+    expect(table1, findsOneWidget);
 
-    // Gone from the floor; the selection and side bar close.
+    // Remove → ✓ removes it; the selection and side bar close.
+    await tester.tap(removeButton);
+    await tester.pumpAndSettle();
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
     expect(table1, findsNothing);
-    expect(removeButton, findsNothing);
+    expect(question, findsNothing);
+    expect(find.byKey(const ValueKey('item-name')), findsNothing);
     expectNothingSelected(tester);
     expect(find.text('Removed 1'), findsOneWidget);
 
@@ -298,17 +492,57 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(table1, findsOneWidget);
-    expect(moveButton, findsOneWidget);
+    expect(tester.widget<ButtonStyleButton>(removeButton).onPressed, isNotNull);
 
     // Remove again and save: the saved plan has no table 1.
-    await tester.tap(editButton);
-    await tester.pumpAndSettle();
     await tester.tap(removeButton);
+    await tester.pumpAndSettle();
+    await tester.tap(confirm);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('save')));
     await tester.pumpAndSettle();
     expect(repository.saved!.tableById('T1'), isNull);
     expect(repository.saved!.tables, hasLength(plan.tables.length - 1));
+  });
+
+  testWidgets('the Remove question floats under the button; the floor '
+      'stays put', (tester) async {
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    await tester.pumpAndSettle();
+    Rect floor() => tester.getRect(find.byType(DragTarget<PaletteItem>));
+    final before = floor();
+
+    final remove = find.byKey(const ValueKey('remove-item'));
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    final card = tester.getRect(find.byKey(const ValueKey('remove-question')));
+    final button = tester.getRect(remove);
+    expect(card.top, greaterThanOrEqualTo(button.bottom));
+    expect(card.right, closeTo(button.right, 0.5));
+    expect(floor(), before);
+  });
+
+  testWidgets('the Remove question closes when another item is selected', (
+    tester,
+  ) async {
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('remove-item')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove item?'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('table-T2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove item?'), findsNothing);
+
+    // And back on table 1: still closed.
+    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove item?'), findsNothing);
   });
 
   testWidgets('Remove works for room items too', (tester) async {
@@ -318,9 +552,9 @@ void main() {
     // The entrance door.
     await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
     await tester.pumpAndSettle();
-    await tester.tap(editButton);
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('remove-item')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('confirm-remove')));
     await tester.pumpAndSettle();
     expect(find.text('Removed Entrance'), findsOneWidget);
 
@@ -330,6 +564,50 @@ void main() {
       repository.saved!.elements.whereType<DoorElement>(),
       hasLength(before - 1),
     );
+  });
+
+  testWidgets('Duplicate copies a table 0.2 m right and down', (tester) async {
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('duplicate')));
+    await tester.pumpAndSettle();
+    // The copy is the next table, and it's selected.
+    expect(find.byKey(const ValueKey('table-T8')), findsOneWidget);
+    expect(find.text('Duplicated 1'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('selection-title'))).data,
+      '8 · Table · roundedRect',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    final original = repository.saved!.tableById('T1')!;
+    final copy = repository.saved!.tableById('T8')!;
+    // 0.2 m = 0.4 units at 0.5 m per unit.
+    expect(copy.x, closeTo(original.x + 0.4, 1e-9));
+    expect(copy.y, closeTo(original.y + 0.4, 1e-9));
+    expect(
+      (copy.width, copy.height, copy.shape.shape),
+      (original.width, original.height, original.shape.shape),
+    );
+    expect(copy.seats, hasLength(original.seats.length));
+  });
+
+  testWidgets('outer walls can\'t be duplicated or removed', (tester) async {
+    await openPage(tester);
+    await tester.tapAt(floorPoint(tester, const Offset(10, 23.9)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Outer wall · '), findsOneWidget);
+    for (final key in ['duplicate', 'remove-item']) {
+      expect(
+        tester.widget<ButtonStyleButton>(find.byKey(ValueKey(key))).onPressed,
+        isNull,
+        reason: key,
+      );
+    }
   });
 
   testWidgets('Edit sets a door\'s length in meters', (tester) async {

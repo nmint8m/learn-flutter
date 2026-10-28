@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import '../floor_plan.dart';
+import 'palette.dart' show nextTableNumber;
 
 /// Points at one item on the floor: a table (by id) or a room & decor
 /// element (by its position in [FloorPlan.elements]).
@@ -230,6 +231,47 @@ FloorPlan snapItem(FloorPlan plan, FloorItemRef ref) {
   final anchor = _anchor(plan, ref);
   const snap = roundPosition;
   return moveItem(plan, ref, Offset(snap(anchor.dx), snap(anchor.dy)) - anchor);
+}
+
+/// Outer walls are the room's shape: they can't be duplicated or removed.
+bool canDuplicateOrRemove(FloorItemRef ref) => ref is! OutlineEdgeRef;
+
+/// How far a duplicate is placed from the original: right and down, in
+/// meters.
+const duplicateOffsetMeters = 0.2;
+
+/// [plan] with a copy of the item, [duplicateOffsetMeters] to the right of
+/// and below the original (a door or window then sticks to the nearest
+/// wall, so it only moves along it). Returns the new plan and the copy, or
+/// null for outer walls.
+///
+/// A copied table gets the next free id and number, like a new table;
+/// other items keep their name.
+(FloorPlan, FloorItemRef)? duplicateItem(FloorPlan plan, FloorItemRef ref) {
+  final shift =
+      const Offset(duplicateOffsetMeters, duplicateOffsetMeters) /
+      plan.metersPerUnit;
+  switch (ref) {
+    case TableRef(:final id):
+      final table = plan.tableById(id)!;
+      final number = nextTableNumber(plan);
+      final copy = table.copyWith(
+        id: 'T$number',
+        label: '$number',
+        x: roundPosition(table.x + shift.dx),
+        y: roundPosition(table.y + shift.dy),
+      );
+      return (plan.copyWith(tables: [...plan.tables, copy]), TableRef(copy.id));
+    case ElementRef(:final index):
+      // Added last, so it's drawn (and found by taps) on top.
+      final copyRef = ElementRef(plan.elements.length);
+      final withCopy = plan.copyWith(
+        elements: [...plan.elements, plan.elements[index]],
+      );
+      return (snapItem(moveItem(withCopy, copyRef, shift), copyRef), copyRef);
+    case OutlineEdgeRef():
+      return null;
+  }
 }
 
 /// [plan] without the item. Outer walls can't be removed (they are the
@@ -585,4 +627,70 @@ FloorPlan stickOpenings(FloorPlan plan) {
     }
   }
   return result;
+}
+
+/// The room, in floor units: the floor's width and height, widened to any
+/// outer or inner walls that reach past them.
+Rect roomBounds(FloorPlan plan) {
+  var bounds = Rect.fromLTWH(0, 0, plan.width, plan.height);
+  void addPoint(Offset p) =>
+      bounds = bounds.expandToInclude(Rect.fromPoints(p, p));
+  plan.floorOutline.forEach(addPoint);
+  for (final element in plan.elements) {
+    if (element case WallElement(:final points)) points.forEach(addPoint);
+  }
+  return bounds;
+}
+
+/// A rect around an item; a rotated one gets the circle around it.
+Rect _box(Offset center, double width, double height, double rotation) =>
+    rotation % 180 == 0
+    ? Rect.fromCenter(center: center, width: width, height: height)
+    : Rect.fromCircle(
+        center: center,
+        radius: math.sqrt(width * width + height * height) / 2,
+      );
+
+/// Everything drawn on the floor, in floor units: the floor itself plus any
+/// walls, doors, fixtures, tables or seats that reach past it.
+Rect planContentBounds(FloorPlan plan) {
+  var bounds = Rect.fromLTWH(0, 0, plan.width, plan.height);
+  void add(Rect r) => bounds = bounds.expandToInclude(r);
+  void addPoint(Offset p) =>
+      add(Rect.fromCenter(center: p, width: 0, height: 0));
+
+  plan.floorOutline.forEach(addPoint);
+  for (final element in plan.elements) {
+    switch (element) {
+      case WallElement(:final points):
+        points.forEach(addPoint);
+      case OpeningElement(:final ends):
+        addPoint(ends.$1);
+        addPoint(ends.$2);
+      case FixtureElement(
+        :final x,
+        :final y,
+        :final width,
+        :final height,
+        :final rotation,
+      ):
+        add(_box(Offset(x, y), width, height, rotation));
+    }
+  }
+  for (final t in plan.tables) {
+    final center = Offset(t.x, t.y);
+    add(_box(center, t.width, t.height, t.rotation));
+    for (final seat in t.seats) {
+      final at = t.rotation == 0
+          ? seat.offset
+          : Offset.fromDirection(
+              seat.offset.direction + t.rotation * math.pi / 180,
+              seat.offset.distance,
+            );
+      add(
+        Rect.fromCircle(center: center + at, radius: SeatLayout.seatSize / 2),
+      );
+    }
+  }
+  return bounds;
 }

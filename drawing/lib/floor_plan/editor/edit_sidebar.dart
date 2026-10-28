@@ -11,7 +11,6 @@ class EditSidebar extends StatefulWidget {
     required this.name,
     required this.onNameChanged,
     required this.onClose,
-    required this.onRemove,
     this.lengthMeters,
     this.onLengthChanged,
     this.walls,
@@ -27,9 +26,6 @@ class EditSidebar extends StatefulWidget {
   final String name;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onClose;
-
-  /// Removes the item from the floor.
-  final VoidCallback onRemove;
 
   /// The length of a door or window, in meters. Null hides the length field
   /// (other items).
@@ -162,17 +158,6 @@ class _EditSidebarState extends State<EditSidebar> {
           Text(
             'Changes show on the floor right away. Tap Save to keep them.',
             style: theme.textTheme.bodySmall,
-          ),
-          const Divider(height: 32),
-          OutlinedButton.icon(
-            key: const ValueKey('remove-item'),
-            onPressed: widget.onRemove,
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Remove'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-              side: BorderSide(color: theme.colorScheme.error),
-            ),
           ),
         ],
       ),

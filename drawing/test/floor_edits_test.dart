@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show Rect;
 
 import 'package:drawing/floor_plan/editor/floor_edits.dart';
 import 'package:drawing/floor_plan/floor_plan.dart';
@@ -227,6 +228,99 @@ void main() {
       expect(itemSizeMeters(plan, ElementRef(doorIndex)), isNull);
       expect(itemSizeMeters(plan, const TableRef('T1')), isNull);
       expect(resizeFixture(plan, ElementRef(doorIndex), width: 2), same(plan));
+    });
+  });
+
+  group('roomBounds', () {
+    test('is the floor when the walls stay on it', () {
+      expect(roomBounds(plan), const Rect.fromLTRB(0, 0, 40, 24));
+    });
+
+    test('takes in walls past the floor, but not tables', () {
+      final wide = FloorPlan.parse('''
+        {"id": "p", "width": 40, "height": 24,
+         "outline": [[0, 0], [47, 0], [47, 24], [0, 24]],
+         "elements": [{"type": "wall", "points": [[10, -2], [10, 5]]}],
+         "tables": [{"id": "T1", "label": "1", "shape": "rect",
+                     "x": 20, "y": 25, "width": 2, "height": 2}]}
+      ''');
+      expect(roomBounds(wide), const Rect.fromLTRB(0, -2, 47, 24));
+    });
+  });
+
+  group('planContentBounds', () {
+    test('is the floor when everything fits on it', () {
+      expect(planContentBounds(plan), const Rect.fromLTRB(0, 0, 40, 24));
+    });
+
+    test('takes in walls and tables past the floor', () {
+      final wide = FloorPlan.parse('''
+        {"id": "p", "width": 40, "height": 24,
+         "outline": [[0, 0], [47, 0], [47, 24], [0, 24]],
+         "tables": [{"id": "T1", "label": "1", "shape": "rect",
+                     "x": 20, "y": 25, "width": 2, "height": 2}]}
+      ''');
+      final bounds = planContentBounds(wide);
+      expect(bounds.right, 47);
+      expect(bounds.bottom, 26);
+      expect(bounds.topLeft, Offset.zero);
+    });
+  });
+
+  group('duplicateItem', () {
+    test('copies elements 0.2 m right and down, and selects the copy', () {
+      final kitchenIndex = plan.elements.indexWhere(
+        (e) => e is FixtureElement && e.label == 'Kitchen',
+      );
+      final (copied, ref) = duplicateItem(plan, ElementRef(kitchenIndex))!;
+      expect(ref, ElementRef(plan.elements.length));
+      final original = plan.elements[kitchenIndex] as FixtureElement;
+      final copy = copied.elements.last as FixtureElement;
+      expect((copy.x, copy.y), (original.x + 0.4, original.y + 0.4));
+      expect(copy.label, 'Kitchen');
+      expect((copy.width, copy.height), (original.width, original.height));
+    });
+
+    test('a copied wall moves all its points', () {
+      final wallIndex = plan.elements.indexWhere((e) => e is WallElement);
+      final (copied, _) = duplicateItem(plan, ElementRef(wallIndex))!;
+      final original = plan.elements[wallIndex] as WallElement;
+      final copy = copied.elements.last as WallElement;
+      expect(copy.points, [
+        for (final p in original.points) p + const Offset(0.4, 0.4),
+      ]);
+    });
+
+    test('a copied door stays on its wall, moved along it', () {
+      final (copied, ref) = duplicateItem(plan, ElementRef(doorIndex))!;
+      final original = plan.elements[doorIndex] as DoorElement;
+      final copy = copied.elements.last as DoorElement;
+      // The entrance is on the bottom wall (y = 24): it can only move right.
+      expect(copy.y, original.y);
+      expect(copy.x, closeTo(original.x + 0.4, 1e-9));
+      expect(openingWall(copied, (ref as ElementRef).index)?.id, isNotNull);
+    });
+
+    test('a copied table gets the next id and number', () {
+      final (copied, ref) = duplicateItem(plan, const TableRef('T1'))!;
+      expect(ref, const TableRef('T8'));
+      expect(copied.tableById('T8')!.label, '8');
+    });
+
+    test('follows the plan\'s metersPerUnit', () {
+      final metric = FloorPlan.parse('''
+        {"id": "p", "width": 10, "height": 10, "metersPerUnit": 1,
+         "elements": [{"type": "fixture", "shape": "rect",
+                       "x": 5, "y": 5, "width": 1, "height": 1}]}
+      ''');
+      final (copied, _) = duplicateItem(metric, const ElementRef(0))!;
+      final copy = copied.elements.last as FixtureElement;
+      expect((copy.x, copy.y), (5.2, 5.2));
+    });
+
+    test('outer walls can\'t be duplicated', () {
+      expect(duplicateItem(plan, const OutlineEdgeRef(0)), isNull);
+      expect(canDuplicateOrRemove(const OutlineEdgeRef(0)), isFalse);
     });
   });
 

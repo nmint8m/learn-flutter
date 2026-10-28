@@ -113,7 +113,7 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
         PaletteItem.circleTable ||
         PaletteItem.semicircleTable ||
         PaletteItem.quarterCircleTable:
-      final number = _nextTableNumber(plan);
+      final number = nextTableNumber(plan);
       final table = FloorTable(
         id: 'T$number',
         label: '$number',
@@ -153,7 +153,7 @@ SeatLayout _defaultSeats(PaletteItem item) => switch (item) {
 };
 
 /// One more than the highest `T<number>` id, so new tables never clash.
-int _nextTableNumber(FloorPlan plan) {
+int nextTableNumber(FloorPlan plan) {
   var highest = 0;
   for (final table in plan.tables) {
     final match = RegExp(r'^T(\d+)$').firstMatch(table.id);

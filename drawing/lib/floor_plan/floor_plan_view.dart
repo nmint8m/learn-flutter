@@ -8,6 +8,69 @@ import 'editor/palette.dart';
 import 'floor_plan.dart';
 import 'table_status.dart';
 
+/// The zoom and pan of a [FloorPlanView]. Besides pinching, it can zoom in
+/// steps around the middle of the view, for zoom buttons.
+class FloorViewController extends TransformationController {
+  /// 25%: the whole floor at a quarter of the size that fits the view.
+  static const minScale = 0.25;
+  static const maxScale = 6.0;
+
+  /// The zoom buttons step through these.
+  static const levels = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0];
+
+  /// The size of the floor's viewport, set by the view on layout. Step zooms
+  /// keep its center in place.
+  Size _viewport = Size.zero;
+
+  double get scale => value.getMaxScaleOnAxis();
+  bool get canZoomIn => scale < maxScale - 1e-6;
+  bool get canZoomOut => scale > minScale + 1e-6;
+
+  /// Zooms to the next level up, e.g. from 100% (or 120% after pinching)
+  /// to 150%.
+  void zoomIn() => zoomTo(
+    levels.firstWhere((l) => l > scale + 1e-6, orElse: () => maxScale),
+  );
+
+  /// Zooms to the next level down.
+  void zoomOut() =>
+      zoomTo(levels.lastWhere((l) => l < scale - 1e-6, orElse: () => minScale));
+
+  /// Everything drawn on the floor, in the view's (unzoomed) pixels. Set by
+  /// the view on layout.
+  Rect _content = Rect.zero;
+
+  /// Shows the whole floor, fitted to the view: 100%, or less if walls or
+  /// items reach past the floor's size.
+  void fit() {
+    final view = Offset.zero & _viewport;
+    if (_content.isEmpty || view.isEmpty) {
+      value = Matrix4.identity();
+      return;
+    }
+    final s = math
+        .min(view.width / _content.width, view.height / _content.height)
+        .clamp(minScale, 1.0);
+    final shift = view.center - _content.center * s;
+    value = Matrix4.translationValues(
+      shift.dx,
+      shift.dy,
+      0,
+    ).multiplied(Matrix4.diagonal3Values(s, s, s));
+  }
+
+  /// Zooms to [target] (1 = the floor fits the view) around the middle of
+  /// the view.
+  void zoomTo(double target) {
+    final f = target.clamp(minScale, maxScale) / scale;
+    final c = _viewport.center(Offset.zero);
+    value = Matrix4.translationValues(c.dx, c.dy, 0)
+        .multiplied(Matrix4.diagonal3Values(f, f, f))
+        .multiplied(Matrix4.translationValues(-c.dx, -c.dy, 0))
+        .multiplied(value);
+  }
+}
+
 /// Draws a [FloorPlan], scaled to fit the available space, with pinch-to-zoom
 /// and panning.
 ///
@@ -31,6 +94,7 @@ class FloorPlanView extends StatefulWidget {
     this.onSelectedDragEnd,
     this.showTables = true,
     this.showRulers = false,
+    this.controller,
   });
 
   final FloorPlan plan;
@@ -66,6 +130,10 @@ class FloorPlanView extends StatefulWidget {
   /// place while zooming and panning, and their marks follow the floor.
   final bool showRulers;
 
+  /// The zoom and pan, e.g. for zoom buttons outside the view. Null: the view
+  /// keeps its own.
+  final FloorViewController? controller;
+
   @override
   State<FloorPlanView> createState() => _FloorPlanViewState();
 }
@@ -79,14 +147,19 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   int? _dragPointer;
 
   /// The current zoom and pan. The rulers read it to line up with the floor.
-  final _transform = TransformationController();
+  FloorViewController? _ownTransform;
+  FloorViewController get _transform =>
+      widget.controller ?? (_ownTransform ??= FloorViewController());
+
+  /// How far the rulers' marks reach past the room on each side, in meters.
+  static const _rulerMarginMeters = 3.0;
 
   /// Thickness of each ruler, in pixels.
   static const _rulerSize = 24.0;
 
   @override
   void dispose() {
-    _transform.dispose();
+    _ownTransform?.dispose();
     super.dispose();
   }
 
@@ -114,20 +187,37 @@ class _FloorPlanViewState extends State<FloorPlanView> {
           math.max(0, constraints.maxWidth - ruler),
           math.max(0, constraints.maxHeight - ruler),
         );
+        _transform._viewport = viewport;
 
-        // How many pixels one floor unit takes, so the whole plan fits.
+        // The whole room: the floor's width and height, widened to any
+        // walls past them. At 100% it fits the view, and taps anywhere on
+        // it reach the page.
+        final room = roomBounds(plan);
+
+        // How many pixels one floor unit takes, so the whole room fits.
         final pixelsPerUnit = math.min(
-          viewport.width / plan.width,
-          viewport.height / plan.height,
+          viewport.width / room.width,
+          viewport.height / room.height,
         );
-        final floorSize = Size(
-          plan.width * pixelsPerUnit,
-          plan.height * pixelsPerUnit,
-        );
-        // Where the (centered) floor's top-left corner is, before zoom/pan.
-        final floorOrigin = Offset(
-          (viewport.width - floorSize.width) / 2,
-          (viewport.height - floorSize.height) / 2,
+        final roomSize = room.size * pixelsPerUnit;
+        // Where floor point (0, 0) is, before zoom/pan, with the room
+        // centered.
+        final floorOrigin =
+            Offset(
+              (viewport.width - roomSize.width) / 2,
+              (viewport.height - roomSize.height) / 2,
+            ) -
+            room.topLeft * pixelsPerUnit;
+
+        // A little space around anything that reaches past the room (e.g. a
+        // table outside the walls).
+        final bounds = planContentBounds(plan).expandToInclude(room);
+        final content = bounds == room ? bounds : bounds.inflate(0.5);
+        _transform._content = Rect.fromLTRB(
+          floorOrigin.dx + content.left * pixelsPerUnit,
+          floorOrigin.dy + content.top * pixelsPerUnit,
+          floorOrigin.dx + content.right * pixelsPerUnit,
+          floorOrigin.dy + content.bottom * pixelsPerUnit,
         );
 
         // Converts a center + size in floor units to a pixel rect.
@@ -138,7 +228,9 @@ class _FloorPlanViewState extends State<FloorPlanView> {
               height: height * pixelsPerUnit,
             );
 
-        Offset toUnits(Offset local) => local / pixelsPerUnit;
+        // From the room box's pixels (its top-left is the room's top-left)
+        // to floor units.
+        Offset toUnits(Offset local) => local / pixelsPerUnit + room.topLeft;
 
         void endDrag() {
           _dragPointer = null;
@@ -189,53 +281,15 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                     if (event.pointer == _dragPointer) endDrag();
                   }
                 : null,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _FloorPainter(
-                      plan: plan,
-                      pixelsPerUnit: pixelsPerUnit,
-                      lineColor: colors.onSurface,
-                      floorColor: colors.surface,
-                      highlightColor: colors.primary,
-                      onHighlightColor: colors.onPrimary,
-                    ),
-                  ),
-                ),
-                for (final (index, element) in plan.elements.indexed)
-                  if (element case final FixtureElement fixture)
-                    _FixtureWidget(
-                      fixture: fixture,
-                      rect: toPixels(
-                        fixture.x,
-                        fixture.y,
-                        fixture.width,
-                        fixture.height,
-                      ),
-                      pixelsPerUnit: pixelsPerUnit,
-                      selected: selected == ElementRef(index),
-                    ),
-                if (showTables)
-                  for (final table in plan.tables)
-                    _TableWidget(
-                      key: ValueKey('table-${table.id}'),
-                      table: table,
-                      rect: toPixels(
-                        table.x,
-                        table.y,
-                        table.width,
-                        table.height,
-                      ),
-                      pixelsPerUnit: pixelsPerUnit,
-                      statusOf: statusOf,
-                      selected: selected == TableRef(table.id),
-                    ),
-                // On top of everything: the selected wall's highlight and its
-                // start and end labels.
-                Positioned.fill(
-                  child: IgnorePointer(
+            // Everything below is drawn in floor coordinates, (0, 0) at
+            // the floor's corner, so it's shifted to where that is in the
+            // room box.
+            child: Transform.translate(
+              offset: -room.topLeft * pixelsPerUnit,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
                     child: CustomPaint(
                       painter: _FloorPainter(
                         plan: plan,
@@ -244,14 +298,58 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         floorColor: colors.surface,
                         highlightColor: colors.primary,
                         onHighlightColor: colors.onPrimary,
-                        selected: selected,
-                        selectionOnly: true,
-                        handlesActive: moving,
                       ),
                     ),
                   ),
-                ),
-              ],
+                  for (final (index, element) in plan.elements.indexed)
+                    if (element case final FixtureElement fixture)
+                      _FixtureWidget(
+                        fixture: fixture,
+                        rect: toPixels(
+                          fixture.x,
+                          fixture.y,
+                          fixture.width,
+                          fixture.height,
+                        ),
+                        pixelsPerUnit: pixelsPerUnit,
+                        selected: selected == ElementRef(index),
+                      ),
+                  if (showTables)
+                    for (final table in plan.tables)
+                      _TableWidget(
+                        key: ValueKey('table-${table.id}'),
+                        table: table,
+                        rect: toPixels(
+                          table.x,
+                          table.y,
+                          table.width,
+                          table.height,
+                        ),
+                        pixelsPerUnit: pixelsPerUnit,
+                        statusOf: statusOf,
+                        selected: selected == TableRef(table.id),
+                      ),
+                  // On top of everything: the selected wall's highlight and its
+                  // start and end labels.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _FloorPainter(
+                          plan: plan,
+                          pixelsPerUnit: pixelsPerUnit,
+                          lineColor: colors.onSurface,
+                          floorColor: colors.surface,
+                          highlightColor: colors.primary,
+                          onHighlightColor: colors.onPrimary,
+                          selected: selected,
+                          selectionOnly: true,
+                          handlesActive: moving,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -261,14 +359,24 @@ class _FloorPlanViewState extends State<FloorPlanView> {
           // Move mode keeps the current zoom and position.
           panEnabled: !moving,
           scaleEnabled: !moving,
-          minScale: 1,
-          maxScale: 6,
-          boundaryMargin: const EdgeInsets.all(48),
+          minScale: FloorViewController.minScale,
+          maxScale: FloorViewController.maxScale,
+          // InteractiveViewer won't zoom out past the point where its
+          // boundary fills the view, so the boundary is wide enough to
+          // show the floor at minScale; 48 px more for panning past it.
+          boundaryMargin: EdgeInsets.symmetric(
+            horizontal:
+                viewport.width * (1 / FloorViewController.minScale - 1) / 2 +
+                48,
+            vertical:
+                viewport.height * (1 / FloorViewController.minScale - 1) / 2 +
+                48,
+          ),
           child: Center(
             child: _dropTarget(
               context,
-              pixelsPerUnit,
-              SizedBox.fromSize(size: floorSize, child: floor),
+              toUnits,
+              SizedBox.fromSize(size: roomSize, child: floor),
             ),
           ),
         );
@@ -278,7 +386,10 @@ class _FloorPlanViewState extends State<FloorPlanView> {
           axis: axis,
           transform: _transform,
           floorStart: axis == Axis.horizontal ? floorOrigin.dx : floorOrigin.dy,
-          floorLength: axis == Axis.horizontal ? plan.width : plan.height,
+          range: axis == Axis.horizontal
+              ? (room.left, room.right)
+              : (room.top, room.bottom),
+          margin: _rulerMarginMeters / plan.metersPerUnit,
           pixelsPerUnit: pixelsPerUnit,
           background: colors.surfaceContainer,
           floorBand: colors.surfaceContainerHighest,
@@ -325,7 +436,11 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   }
 
   /// Wraps the floor so design panel items can be dropped on it.
-  Widget _dropTarget(BuildContext context, double pixelsPerUnit, Widget floor) {
+  Widget _dropTarget(
+    BuildContext context,
+    Offset Function(Offset local) toUnits,
+    Widget floor,
+  ) {
     final onDrop = widget.onItemDropped;
     if (onDrop == null) return floor;
 
@@ -336,11 +451,11 @@ class _FloorPlanViewState extends State<FloorPlanView> {
         // also undoes the zoom and pan, so this is right at any zoom level.
         final box = targetContext.findRenderObject()! as RenderBox;
         final local = box.globalToLocal(details.offset);
-        onDrop(details.data, local / pixelsPerUnit);
+        onDrop(details.data, toUnits(local));
       },
       builder: (context, candidates, rejected) {
         targetContext = context;
-        // Outline the floor while an item is dragged over it.
+        // Outline the room while an item is dragged over it.
         return DecoratedBox(
           position: DecorationPosition.foreground,
           decoration: BoxDecoration(
@@ -367,7 +482,8 @@ class _RulerPainter extends CustomPainter {
     required this.axis,
     required this.transform,
     required this.floorStart,
-    required this.floorLength,
+    required this.range,
+    required this.margin,
     required this.pixelsPerUnit,
     required this.background,
     required this.floorBand,
@@ -380,8 +496,12 @@ class _RulerPainter extends CustomPainter {
   /// Where the floor starts along this axis, in pixels, before zoom and pan.
   final double floorStart;
 
-  /// The floor's width (top ruler) or height (left ruler), in floor units.
-  final double floorLength;
+  /// What the ruler covers, in floor units: the floor's width (top ruler)
+  /// or height (left ruler), widened to any walls past it.
+  final (double, double) range;
+
+  /// How far the marks carry on past [range] on both ends, in floor units.
+  final double margin;
   final double pixelsPerUnit;
   final Color background;
   final Color floorBand;
@@ -402,11 +522,14 @@ class _RulerPainter extends CustomPainter {
         shift + (floorStart + units * pixelsPerUnit) * scale;
     final pixelsPerShownUnit = pixelsPerUnit * scale;
 
+    // Zoomed in, the floor band and marks reach past the ruler: keep them in.
+    canvas.clipRect(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, Paint()..color = background);
 
-    // A lighter band where the floor is.
-    final start = toScreen(0);
-    final end = toScreen(floorLength);
+    // A lighter band where the room is.
+    final (from, to) = range;
+    final start = toScreen(from);
+    final end = toScreen(to);
     canvas.drawRect(
       horizontal
           ? Rect.fromLTRB(start, 0, end, across)
@@ -428,8 +551,10 @@ class _RulerPainter extends CustomPainter {
     final tick = Paint()
       ..color = tickColor
       ..strokeWidth = 1;
-    final count = (floorLength / minor).floor();
-    for (var i = 0; i <= count; i++) {
+    // Marks run past the room by [margin] on both ends.
+    final first = ((from - margin) / minor).ceil();
+    final last = ((to + margin) / minor).floor();
+    for (var i = first; i <= last; i++) {
       final units = i * minor;
       final at = toScreen(units);
       if (at < -1 || at > along + 1) continue;
@@ -486,7 +611,8 @@ class _RulerPainter extends CustomPainter {
       old.axis != axis ||
       old.transform != transform ||
       old.floorStart != floorStart ||
-      old.floorLength != floorLength ||
+      old.range != range ||
+      old.margin != margin ||
       old.pixelsPerUnit != pixelsPerUnit ||
       old.background != background ||
       old.floorBand != floorBand ||
@@ -551,11 +677,23 @@ class _FloorPainter extends CustomPainter {
       final grid = Paint()
         ..color = lineColor.withValues(alpha: 0.06)
         ..strokeWidth = 1;
-      for (var x = 0.0; x <= plan.width; x += plan.gridSize) {
-        canvas.drawLine(Offset(x * ppu, 0), Offset(x * ppu, size.height), grid);
+      // Across the whole room, which may reach past the plan's width and
+      // height; lines stay on multiples of the grid size.
+      final area = floor.getBounds().expandToInclude(Offset.zero & size);
+      final step = plan.gridSize * ppu;
+      for (
+        var x = (area.left / step).floorToDouble() * step;
+        x <= area.right;
+        x += step
+      ) {
+        canvas.drawLine(Offset(x, area.top), Offset(x, area.bottom), grid);
       }
-      for (var y = 0.0; y <= plan.height; y += plan.gridSize) {
-        canvas.drawLine(Offset(0, y * ppu), Offset(size.width, y * ppu), grid);
+      for (
+        var y = (area.top / step).floorToDouble() * step;
+        y <= area.bottom;
+        y += step
+      ) {
+        canvas.drawLine(Offset(area.left, y), Offset(area.right, y), grid);
       }
     }
     canvas.restore();
