@@ -41,15 +41,16 @@ void main() {
     }
   });
 
-  test('positions snap to half a unit and stay on the floor', () {
+  test('positions round to one decimal and stay on the floor', () {
     final inside =
         addPaletteItem(
               plan,
               PaletteItem.plant,
-              const Offset(3.3, 4.8),
+              const Offset(3.34, 4.86),
             ).plan.elements.single
             as FixtureElement;
-    expect((inside.x, inside.y), (3.5, 5.0));
+    expect(inside.x, closeTo(3.3, 1e-9));
+    expect(inside.y, closeTo(4.9, 1e-9));
 
     final outside =
         addPaletteItem(
@@ -84,6 +85,6 @@ void main() {
                      "orientation": "horizontal"}]}
     ''');
     final window = withWindow.elements.single as WindowElement;
-    expect((window.x, window.width, window.vertical), (5.0, 3.0, false));
+    expect((window.x, window.width, window.angle), (5.0, 3.0, 0.0));
   });
 }

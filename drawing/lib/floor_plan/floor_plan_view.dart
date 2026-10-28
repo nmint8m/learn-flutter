@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../geometry/geometry_shape.dart';
@@ -27,6 +26,7 @@ class FloorPlanView extends StatefulWidget {
     this.selected,
     this.onFloorTap,
     this.onItemDropped,
+    this.onSelectedDragStart,
     this.onSelectedDrag,
     this.onSelectedDragEnd,
     this.showTables = true,
@@ -52,6 +52,11 @@ class FloorPlanView extends StatefulWidget {
   /// Move mode: when set, zoom and pan are frozen and dragging anywhere on
   /// the floor reports how far to move the selected item (floor units).
   final ValueChanged<Offset>? onSelectedDrag;
+
+  /// Called when a move-mode drag starts, with where (floor units) and how
+  /// close to a point counts as touching it (floor units, about a fingertip
+  /// at the current zoom). Used to grab a wall's start or end point.
+  final void Function(Offset at, double touchRadius)? onSelectedDragStart;
   final VoidCallback? onSelectedDragEnd;
 
   /// False hides the tables and their seats, e.g. while designing the room.
@@ -69,6 +74,9 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   /// Where the last move-mode drag update was, to turn positions into steps.
   /// Kept here, not in build: every update rebuilds the view.
   Offset? _lastDrag;
+
+  /// The finger being followed in move mode, so a second finger is ignored.
+  int? _dragPointer;
 
   /// The current zoom and pan. The rulers read it to line up with the floor.
   final _transform = TransformationController();
@@ -89,6 +97,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :statusOf,
       :selected,
       :onFloorTap,
+      :onSelectedDragStart,
       :onSelectedDrag,
       :onSelectedDragEnd,
       :showTables,
@@ -131,73 +140,119 @@ class _FloorPlanViewState extends State<FloorPlanView> {
 
         Offset toUnits(Offset local) => local / pixelsPerUnit;
 
+        void endDrag() {
+          _dragPointer = null;
+          _lastDrag = null;
+          onSelectedDragEnd?.call();
+        }
+
         final floor = GestureDetector(
           behavior: HitTestBehavior.opaque,
-          // Measure moves from where the finger first touched, so the item
-          // keeps up with the finger instead of lagging by the drag slop.
-          dragStartBehavior: DragStartBehavior.down,
           onTapUp: onFloorTap == null
               ? null
               : (details) => onFloorTap(toUnits(details.localPosition)),
-          // Only in move mode, so normal drags still pan the floor.
-          onPanStart: moving
-              ? (details) => _lastDrag = details.localPosition
-              : null,
-          onPanUpdate: moving
-              ? (details) {
-                  final previous = _lastDrag ?? details.localPosition;
-                  _lastDrag = details.localPosition;
-                  onSelectedDrag(toUnits(details.localPosition - previous));
-                }
-              : null,
-          onPanEnd: moving
-              ? (_) {
-                  _lastDrag = null;
-                  onSelectedDragEnd?.call();
-                }
-              : null,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _FloorPainter(
-                    plan: plan,
-                    pixelsPerUnit: pixelsPerUnit,
-                    lineColor: colors.onSurface,
-                    floorColor: colors.surface,
-                    highlightColor: colors.primary,
-                    selectedElement: switch (selected) {
-                      ElementRef(:final index) => index,
-                      _ => null,
-                    },
+          // Move mode reads the finger directly instead of waiting for a
+          // drag gesture, which only starts after ~36 pixels: small nudges
+          // count too, and the item follows the finger from the first
+          // touch. (Zoom, pan and taps are all off in move mode, so nothing
+          // else needs these touches.) Only the first finger is followed.
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: moving
+                ? (event) {
+                    if (_dragPointer != null) return;
+                    _dragPointer = event.pointer;
+                    _lastDrag = event.localPosition;
+                    // About 24 screen pixels, whatever the zoom.
+                    final zoom = _transform.value.storage[0];
+                    onSelectedDragStart?.call(
+                      toUnits(event.localPosition),
+                      math.max(1.0, 24 / (pixelsPerUnit * zoom)),
+                    );
+                  }
+                : null,
+            onPointerMove: moving
+                ? (event) {
+                    if (event.pointer != _dragPointer) return;
+                    final previous = _lastDrag ?? event.localPosition;
+                    _lastDrag = event.localPosition;
+                    onSelectedDrag(toUnits(event.localPosition - previous));
+                  }
+                : null,
+            onPointerUp: moving
+                ? (event) {
+                    if (event.pointer == _dragPointer) endDrag();
+                  }
+                : null,
+            onPointerCancel: moving
+                ? (event) {
+                    if (event.pointer == _dragPointer) endDrag();
+                  }
+                : null,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _FloorPainter(
+                      plan: plan,
+                      pixelsPerUnit: pixelsPerUnit,
+                      lineColor: colors.onSurface,
+                      floorColor: colors.surface,
+                      highlightColor: colors.primary,
+                      onHighlightColor: colors.onPrimary,
+                    ),
                   ),
                 ),
-              ),
-              for (final (index, element) in plan.elements.indexed)
-                if (element case final FixtureElement fixture)
-                  _FixtureWidget(
-                    fixture: fixture,
-                    rect: toPixels(
-                      fixture.x,
-                      fixture.y,
-                      fixture.width,
-                      fixture.height,
+                for (final (index, element) in plan.elements.indexed)
+                  if (element case final FixtureElement fixture)
+                    _FixtureWidget(
+                      fixture: fixture,
+                      rect: toPixels(
+                        fixture.x,
+                        fixture.y,
+                        fixture.width,
+                        fixture.height,
+                      ),
+                      pixelsPerUnit: pixelsPerUnit,
+                      selected: selected == ElementRef(index),
                     ),
-                    pixelsPerUnit: pixelsPerUnit,
-                    selected: selected == ElementRef(index),
+                if (showTables)
+                  for (final table in plan.tables)
+                    _TableWidget(
+                      key: ValueKey('table-${table.id}'),
+                      table: table,
+                      rect: toPixels(
+                        table.x,
+                        table.y,
+                        table.width,
+                        table.height,
+                      ),
+                      pixelsPerUnit: pixelsPerUnit,
+                      statusOf: statusOf,
+                      selected: selected == TableRef(table.id),
+                    ),
+                // On top of everything: the selected wall's highlight and its
+                // start and end labels.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _FloorPainter(
+                        plan: plan,
+                        pixelsPerUnit: pixelsPerUnit,
+                        lineColor: colors.onSurface,
+                        floorColor: colors.surface,
+                        highlightColor: colors.primary,
+                        onHighlightColor: colors.onPrimary,
+                        selected: selected,
+                        selectionOnly: true,
+                        handlesActive: moving,
+                      ),
+                    ),
                   ),
-              if (showTables)
-                for (final table in plan.tables)
-                  _TableWidget(
-                    key: ValueKey('table-${table.id}'),
-                    table: table,
-                    rect: toPixels(table.x, table.y, table.width, table.height),
-                    pixelsPerUnit: pixelsPerUnit,
-                    statusOf: statusOf,
-                    selected: selected == TableRef(table.id),
-                  ),
-            ],
+                ),
+              ],
+            ),
           ),
         );
 
@@ -446,7 +501,10 @@ class _FloorPainter extends CustomPainter {
     required this.lineColor,
     required this.floorColor,
     required this.highlightColor,
-    this.selectedElement,
+    required this.onHighlightColor,
+    this.selected,
+    this.selectionOnly = false,
+    this.handlesActive = false,
   });
 
   final FloorPlan plan;
@@ -455,14 +513,30 @@ class _FloorPainter extends CustomPainter {
   final Color floorColor;
   final Color highlightColor;
 
-  /// Index in [FloorPlan.elements] of a selected wall, door or window, drawn
-  /// with a highlight. (Selected fixtures highlight themselves.)
-  final int? selectedElement;
+  /// Text on top of [highlightColor], e.g. in the wall end labels.
+  final Color onHighlightColor;
+
+  /// A selected wall, outer wall, door or window is drawn highlighted.
+  /// (Selected fixtures and tables highlight themselves.)
+  final FloorItemRef? selected;
+
+  /// True paints only the selection (highlight, wall end markers and
+  /// labels). The view uses one painter for the floor at the bottom and a
+  /// second with this set on top, so labels are never hidden under fixtures
+  /// or tables.
+  final bool selectionOnly;
+
+  /// In move mode, wall end markers are drawn bigger: they can be dragged.
+  final bool handlesActive;
 
   static const _wallThickness = 0.25; // floor units
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (selectionOnly) {
+      _paintSelection(canvas, size);
+      return;
+    }
     final ppu = pixelsPerUnit;
 
     // The room's shape. Outside it (e.g. the gap in a U-shaped room) stays
@@ -516,13 +590,12 @@ class _FloorPainter extends CustomPainter {
 
     // A window: the wall is replaced by a light pane between two thin lines.
     for (final window in plan.elements.whereType<WindowElement>()) {
-      final center = Offset(window.x, window.y) * ppu;
-      final half = window.width / 2 * ppu;
-      final along = window.vertical ? const Offset(0, 1) : const Offset(1, 0);
-      final across = window.vertical ? const Offset(1, 0) : const Offset(0, 1);
+      final along = window.along;
+      final across = Offset(-along.dy, along.dx);
       final thickness = _wallThickness * ppu;
-      final a = center - along * half;
-      final b = center + along * half;
+      final (start, end) = window.ends;
+      final a = start * ppu;
+      final b = end * ppu;
 
       canvas.drawLine(
         a,
@@ -542,12 +615,12 @@ class _FloorPainter extends CustomPainter {
 
     // A door is a gap cut into the wall, with a small post at each side.
     for (final door in plan.elements.whereType<DoorElement>()) {
-      final center = Offset(door.x, door.y) * ppu;
-      final half = door.width / 2 * ppu;
-      final along = door.vertical ? const Offset(0, 1) : const Offset(1, 0);
-      final across = door.vertical ? const Offset(1, 0) : const Offset(0, 1);
-      final a = center - along * half;
-      final b = center + along * half;
+      final center = door.center * ppu;
+      final along = door.along;
+      final across = Offset(-along.dy, along.dx);
+      final (start, end) = door.ends;
+      final a = start * ppu;
+      final b = end * ppu;
 
       canvas.drawLine(
         a,
@@ -576,51 +649,142 @@ class _FloorPainter extends CustomPainter {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        // Next to the opening: above a horizontal door, left of a vertical
-        // one.
-        final anchor = door.vertical
-            ? center + Offset(-0.5 * ppu - text.width / 2, 0)
-            : center + Offset(0, -0.9 * ppu);
+        // Next to the opening, on the side facing the middle of the room.
+        final toMiddle = size.center(Offset.zero) - center;
+        final inward = across.dx * toMiddle.dx + across.dy * toMiddle.dy >= 0
+            ? across
+            : -across;
+        final reach =
+            0.4 * ppu +
+            (inward.dx.abs() * text.width + inward.dy.abs() * text.height) / 2;
+        final anchor = center + inward * reach;
         text.paint(canvas, anchor - Offset(text.width / 2, text.height / 2));
       }
     }
-
-    _paintSelection(canvas);
   }
 
-  /// A soft, wide band in the highlight color over a selected wall, door or
-  /// window.
-  void _paintSelection(Canvas canvas) {
-    final index = selectedElement;
-    if (index == null || index >= plan.elements.length) return;
+  /// Highlights the selected wall, outer wall, door or window. Walls also get
+  /// a marker and a label at their start and end points.
+  void _paintSelection(Canvas canvas, Size size) {
+    final ref = selected;
+    if (ref == null || !itemExists(plan, ref)) return;
     final ppu = pixelsPerUnit;
-    final paint = Paint()
-      ..color = highlightColor.withValues(alpha: 0.45)
+
+    final halo = Paint()
+      ..color = highlightColor.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = _wallThickness * ppu * 3
+      ..strokeWidth = _wallThickness * ppu * 4
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    void opening(double x, double y, double width, bool vertical) {
-      final center = Offset(x, y) * ppu;
-      final half = width / 2 * ppu;
-      final along = vertical ? const Offset(0, 1) : const Offset(1, 0);
-      canvas.drawLine(center - along * half, center + along * half, paint);
+    if (wallPoints(plan, ref) case final points?) {
+      final path = Path()..addPolygon([for (final p in points) p * ppu], false);
+      canvas.drawPath(path, halo);
+      // The wall itself, redrawn in the highlight color.
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = highlightColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _wallThickness * ppu * 1.2
+          ..strokeCap = StrokeCap.square
+          ..strokeJoin = StrokeJoin.miter,
+      );
+      // Small dots at any corners in between.
+      for (final corner in points.sublist(1, points.length - 1)) {
+        canvas.drawCircle(
+          corner * ppu,
+          math.max(3, 0.15 * ppu),
+          Paint()..color = highlightColor,
+        );
+      }
+      _paintEnd(canvas, size, 'Start', points.first, points[1]);
+      _paintEnd(canvas, size, 'End', points.last, points[points.length - 2]);
+      return;
     }
 
-    switch (plan.elements[index]) {
-      case WallElement(:final points):
-        canvas.drawPath(
-          Path()..addPolygon([for (final p in points) p * ppu], false),
-          paint,
-        );
-      case DoorElement(:final x, :final y, :final width, :final vertical):
-        opening(x, y, width, vertical);
-      case WindowElement(:final x, :final y, :final width, :final vertical):
-        opening(x, y, width, vertical);
-      case FixtureElement():
-        break;
+    if (ref case ElementRef(:final index)) {
+      if (plan.elements[index] case final OpeningElement opening) {
+        final (a, b) = opening.ends;
+        canvas.drawLine(a * ppu, b * ppu, halo);
+      }
     }
+  }
+
+  /// A marker on a wall end at [point], with a label such as
+  /// "Start (30, 0)". The label sits beside the wall, just inside the end
+  /// ([neighbor] is the next point along the wall), on the side facing the
+  /// middle of the room, and is kept within the floor so it's never cut off.
+  void _paintEnd(
+    Canvas canvas,
+    Size floorSize,
+    String name,
+    Offset point,
+    Offset neighbor,
+  ) {
+    final ppu = pixelsPerUnit;
+    final at = point * ppu;
+    final markerRadius = math.max(5.0, 0.3 * ppu) * (handlesActive ? 1.7 : 1);
+
+    canvas.drawCircle(at, markerRadius, Paint()..color = onHighlightColor);
+    canvas.drawCircle(
+      at,
+      markerRadius,
+      Paint()
+        ..color = highlightColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(2, 0.08 * ppu),
+    );
+
+    final text = TextPainter(
+      text: TextSpan(
+        text: '$name ${formatPoint(point)}',
+        style: TextStyle(
+          color: onHighlightColor,
+          fontSize: math.max(9, 0.45 * ppu),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final padding = math.max(3.0, 0.15 * ppu);
+    final size = Size(text.width + padding * 2, text.height + padding);
+
+    // Along the wall, pointing out of this end.
+    final out = point - neighbor;
+    final along = out.distance == 0 ? const Offset(1, 0) : out / out.distance;
+    // Across the wall, toward the middle of the floor.
+    var across = Offset(-along.dy, along.dx);
+    final toMiddle = floorSize.center(Offset.zero) - at;
+    if (across.dx * toMiddle.dx + across.dy * toMiddle.dy < 0) {
+      across = -across;
+    }
+    // How far the label reaches in a direction from its center.
+    double halfExtent(Offset d) =>
+        (d.dx.abs() * size.width + d.dy.abs() * size.height) / 2;
+
+    final center =
+        at +
+        across * (markerRadius + 4 + halfExtent(across)) -
+        along * halfExtent(along);
+    var box = Rect.fromCenter(
+      center: center,
+      width: size.width,
+      height: size.height,
+    );
+    // Keep it inside the floor.
+    box = box.shift(
+      Offset(
+        box.left < 0 ? -box.left : math.min(0, floorSize.width - box.right),
+        box.top < 0 ? -box.top : math.min(0, floorSize.height - box.bottom),
+      ),
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(box, Radius.circular(size.height / 2)),
+      Paint()..color = highlightColor,
+    );
+    text.paint(canvas, box.center - Offset(text.width / 2, text.height / 2));
   }
 
   @override
@@ -630,7 +794,10 @@ class _FloorPainter extends CustomPainter {
       old.lineColor != lineColor ||
       old.floorColor != floorColor ||
       old.highlightColor != highlightColor ||
-      old.selectedElement != selectedElement;
+      old.onHighlightColor != onHighlightColor ||
+      old.selected != selected ||
+      old.selectionOnly != selectionOnly ||
+      old.handlesActive != handlesActive;
 }
 
 /// Places [child] so its center is at [rect]'s center, turned by [degrees].

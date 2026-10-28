@@ -4,6 +4,11 @@ import 'dart:ui';
 
 import '../geometry/geometry_paths.dart';
 
+/// Rounds a position (x, y, or a wall point, in floor units) to one
+/// decimal, e.g. 12.34 → 12.3 and 12.35 → 12.4. Items are kept on these
+/// positions when they are added, moved and saved.
+double roundPosition(double value) => (value * 10).roundToDouble() / 10;
+
 /// A restaurant floor plan: the room, its fixed elements, and its tables.
 ///
 /// Every position and size is in *floor units*, not pixels. You choose what a
@@ -19,6 +24,7 @@ class FloorPlan {
     required this.width,
     required this.height,
     this.gridSize = 1,
+    this.metersPerUnit = 0.5,
     this.outline,
     this.elements = const [],
     this.tables = const [],
@@ -31,6 +37,11 @@ class FloorPlan {
 
   /// Spacing of the background grid lines, in floor units. 0 hides the grid.
   final double gridSize;
+
+  /// How long one floor unit is in real life, in meters. Used to show and
+  /// edit sizes in meters (e.g. a door's length). The default, 0.5, makes a
+  /// 4 × 2 table 2 m × 1 m.
+  final double metersPerUnit;
 
   /// The room's shape, as the corners of a polygon in order. Only the area
   /// inside is floor, and its edge is drawn as the outer wall. Leave it out
@@ -66,6 +77,7 @@ class FloorPlan {
       width: json.positiveNumber('width'),
       height: json.positiveNumber('height'),
       gridSize: json.number('gridSize', fallback: 1),
+      metersPerUnit: json.positiveNumber('metersPerUnit', fallback: 0.5),
       outline: json.optionalPointList('outline', minLength: 3),
       elements: [
         for (final e in json.objectList('elements')) FloorElement._fromJson(e),
@@ -86,6 +98,7 @@ class FloorPlan {
 
   /// A copy with some parts replaced, e.g. after adding a table.
   FloorPlan copyWith({
+    List<Offset>? outline,
     List<FloorElement>? elements,
     List<FloorTable>? tables,
   }) => FloorPlan(
@@ -94,7 +107,8 @@ class FloorPlan {
     width: width,
     height: height,
     gridSize: gridSize,
-    outline: outline,
+    metersPerUnit: metersPerUnit,
+    outline: outline ?? this.outline,
     elements: elements ?? this.elements,
     tables: tables ?? this.tables,
   );
@@ -106,6 +120,7 @@ class FloorPlan {
     'width': _num(width),
     'height': _num(height),
     'gridSize': _num(gridSize),
+    'metersPerUnit': _num(metersPerUnit),
     if (outline case final points?) 'outline': _points(points),
     'elements': [for (final e in elements) e.toJson()],
     'tables': [for (final t in tables) t.toJson()],
@@ -243,112 +258,157 @@ class WallElement extends FloorElement {
   };
 }
 
-/// An opening in a wall. ([x], [y]) is the middle of the opening.
-class DoorElement extends FloorElement {
-  const DoorElement({
+/// A door or window: an opening that always sits on a wall.
+///
+/// ([x], [y]) is its middle, and it runs along the wall at [angle] degrees
+/// (0 = left to right, 90 = top to bottom). The editor keeps it on the
+/// nearest wall: see `stickOpenings` in `floor_edits.dart`.
+sealed class OpeningElement extends FloorElement {
+  const OpeningElement({
     required this.x,
     required this.y,
     required this.width,
-    this.vertical = false,
+    this.angle = 0,
     this.label,
   });
 
-  factory DoorElement._fromJson(_Json json) {
-    final orientation = json.string('orientation', fallback: 'horizontal');
-    if (orientation != 'horizontal' && orientation != 'vertical') {
-      throw json.error('"orientation" must be horizontal or vertical');
-    }
-    return DoorElement(
-      x: json.number('x'),
-      y: json.number('y'),
-      width: json.positiveNumber('width'),
-      vertical: orientation == 'vertical',
-      label: json.optionalString('label'),
-    );
-  }
-
   final double x;
   final double y;
+
+  /// Length along the wall, in floor units.
   final double width;
 
-  /// True for a door in a vertical wall (left/right), false for a horizontal
-  /// one (top/bottom).
-  final bool vertical;
+  /// Direction of the wall it sits on, in degrees, from 0 up to (not
+  /// including) 180.
+  final double angle;
 
   @override
   final String? label;
 
-  DoorElement copyWith({double? x, double? y, String? label}) => DoorElement(
+  Offset get center => Offset(x, y);
+
+  /// A unit-length step along the wall.
+  Offset get along => Offset.fromDirection(angle * math.pi / 180);
+
+  /// The opening's two ends.
+  (Offset, Offset) get ends =>
+      (center - along * (width / 2), center + along * (width / 2));
+
+  OpeningElement copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? angle,
+    String? label,
+  });
+
+  static double _angleFromJson(_Json json) {
+    if (json.has('angle')) return normalizeAngle(json.number('angle'));
+    final orientation = json.string('orientation', fallback: 'horizontal');
+    if (orientation != 'horizontal' && orientation != 'vertical') {
+      throw json.error('"orientation" must be horizontal or vertical');
+    }
+    return orientation == 'vertical' ? 90 : 0;
+  }
+
+  Map<String, Object?> _json(String type) => {
+    'type': type,
+    if (label != null) 'label': label,
+    'x': _position(x),
+    'y': _position(y),
+    'width': _num(width),
+    // Straight walls use the readable form; slanted ones store the angle.
+    if (angle == 90)
+      'orientation': 'vertical'
+    else if (angle != 0)
+      'angle': _num(angle),
+  };
+}
+
+/// An angle in degrees, folded into 0 ≤ angle < 180 (a door at 190° lies
+/// the same way as one at 10°). Values within a hair of 0 or 90 become
+/// exactly 0 or 90.
+double normalizeAngle(double degrees) {
+  var a = degrees % 180;
+  if (a < 0) a += 180;
+  for (final exact in const [0.0, 90.0, 180.0]) {
+    if ((a - exact).abs() < 1e-6) return exact % 180;
+  }
+  return a;
+}
+
+/// A door: a gap in the wall.
+class DoorElement extends OpeningElement {
+  const DoorElement({
+    required super.x,
+    required super.y,
+    required super.width,
+    super.angle,
+    super.label,
+  });
+
+  factory DoorElement._fromJson(_Json json) => DoorElement(
+    x: json.number('x'),
+    y: json.number('y'),
+    width: json.positiveNumber('width'),
+    angle: OpeningElement._angleFromJson(json),
+    label: json.optionalString('label'),
+  );
+
+  @override
+  DoorElement copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? angle,
+    String? label,
+  }) => DoorElement(
     x: x ?? this.x,
     y: y ?? this.y,
-    width: width,
-    vertical: vertical,
+    width: width ?? this.width,
+    angle: angle ?? this.angle,
     label: label ?? this.label,
   );
 
   @override
-  Map<String, Object?> toJson() => {
-    'type': 'door',
-    if (label != null) 'label': label,
-    'x': _num(x),
-    'y': _num(y),
-    'width': _num(width),
-    if (vertical) 'orientation': 'vertical',
-  };
+  Map<String, Object?> toJson() => _json('door');
 }
 
-/// A window set into a wall. ([x], [y]) is the middle of the window.
-class WindowElement extends FloorElement {
+/// A window set into a wall.
+class WindowElement extends OpeningElement {
   const WindowElement({
-    required this.x,
-    required this.y,
-    required this.width,
-    this.vertical = false,
-    this.label,
+    required super.x,
+    required super.y,
+    required super.width,
+    super.angle,
+    super.label,
   });
 
-  factory WindowElement._fromJson(_Json json) {
-    final orientation = json.string('orientation', fallback: 'horizontal');
-    if (orientation != 'horizontal' && orientation != 'vertical') {
-      throw json.error('"orientation" must be horizontal or vertical');
-    }
-    return WindowElement(
-      x: json.number('x'),
-      y: json.number('y'),
-      width: json.positiveNumber('width'),
-      vertical: orientation == 'vertical',
-      label: json.optionalString('label'),
-    );
-  }
-
-  final double x;
-  final double y;
-  final double width;
-
-  /// True for a window in a vertical wall (left/right).
-  final bool vertical;
+  factory WindowElement._fromJson(_Json json) => WindowElement(
+    x: json.number('x'),
+    y: json.number('y'),
+    width: json.positiveNumber('width'),
+    angle: OpeningElement._angleFromJson(json),
+    label: json.optionalString('label'),
+  );
 
   @override
-  final String? label;
-
-  WindowElement copyWith({double? x, double? y, String? label}) =>
-      WindowElement(
-        x: x ?? this.x,
-        y: y ?? this.y,
-        width: width,
-        vertical: vertical,
-        label: label ?? this.label,
-      );
+  WindowElement copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? angle,
+    String? label,
+  }) => WindowElement(
+    x: x ?? this.x,
+    y: y ?? this.y,
+    width: width ?? this.width,
+    angle: angle ?? this.angle,
+    label: label ?? this.label,
+  );
 
   @override
-  Map<String, Object?> toJson() => {
-    'type': 'window',
-    if (label != null) 'label': label,
-    'x': _num(x),
-    'y': _num(y),
-    'width': _num(width),
-    if (vertical) 'orientation': 'vertical',
-  };
+  Map<String, Object?> toJson() => _json('window');
 }
 
 /// A fixed, non-bookable object: kitchen, plant, pillar, stage...
@@ -390,25 +450,30 @@ class FixtureElement extends FloorElement {
   final String? label;
   final Color? color;
 
-  FixtureElement copyWith({double? x, double? y, String? label}) =>
-      FixtureElement(
-        shape: shape,
-        x: x ?? this.x,
-        y: y ?? this.y,
-        width: width,
-        height: height,
-        rotation: rotation,
-        label: label ?? this.label,
-        color: color,
-      );
+  FixtureElement copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+    String? label,
+  }) => FixtureElement(
+    shape: shape,
+    x: x ?? this.x,
+    y: y ?? this.y,
+    width: width ?? this.width,
+    height: height ?? this.height,
+    rotation: rotation,
+    label: label ?? this.label,
+    color: color,
+  );
 
   @override
   Map<String, Object?> toJson() => {
     'type': 'fixture',
     if (label != null) 'label': label,
     ...shape.toJson(),
-    'x': _num(x),
-    'y': _num(y),
+    'x': _position(x),
+    'y': _position(y),
     'width': _num(width),
     'height': _num(height),
     if (rotation != 0) 'rotation': _num(rotation),
@@ -492,8 +557,8 @@ class FloorTable {
     'id': id,
     'label': label,
     ...shape.toJson(),
-    'x': _num(x),
-    'y': _num(y),
+    'x': _position(x),
+    'y': _position(y),
     'width': _num(width),
     'height': _num(height),
     if (rotation != 0) 'rotation': _num(rotation),
@@ -649,6 +714,8 @@ class _Json {
     return value;
   }
 
+  bool has(String key) => _map.containsKey(key);
+
   String? optionalString(String key) =>
       _map.containsKey(key) ? string(key) : null;
 
@@ -660,8 +727,8 @@ class _Json {
     return value.toDouble();
   }
 
-  double positiveNumber(String key) {
-    final value = number(key);
+  double positiveNumber(String key, {double? fallback}) {
+    final value = number(key, fallback: fallback);
     if (value <= 0) throw error('"$key" must be greater than 0');
     return value;
   }
@@ -744,13 +811,16 @@ class _Json {
 
 /// Whole numbers are written without ".0", and others rounded to 2 decimals,
 /// so the file stays readable after moving things around.
+/// Positions are written to one decimal, like [roundPosition].
+num _position(double value) => _num(roundPosition(value));
+
 num _num(double value) {
   final rounded = (value * 100).roundToDouble() / 100;
   return rounded == rounded.roundToDouble() ? rounded.toInt() : rounded;
 }
 
 List<List<num>> _points(List<Offset> points) => [
-  for (final p in points) [_num(p.dx), _num(p.dy)],
+  for (final p in points) [_position(p.dx), _position(p.dy)],
 ];
 
 String _hex(Color color) {

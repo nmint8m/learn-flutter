@@ -49,12 +49,13 @@ typedef PaletteResult = ({FloorPlan plan, String description});
 
 /// Adds [item] to [plan], centered at [at] (in floor units).
 ///
-/// The position is snapped to half a unit and kept inside the floor. New
+/// The position is rounded to one decimal ([roundPosition]) and kept inside
+/// the floor. New
 /// tables get the next free id (`T8`, `T9`...) and a sensible default seat
 /// layout for their shape.
 PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
   double snap(double v, double max) =>
-      ((v * 2).roundToDouble() / 2).clamp(0, max).toDouble();
+      roundPosition(v).clamp(0, max).toDouble();
   final x = snap(at.dx, plan.width);
   final y = snap(at.dy, plan.height);
 

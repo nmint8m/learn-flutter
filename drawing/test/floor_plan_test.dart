@@ -6,9 +6,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('FloorPlan.parse', () {
-    test('reads the sample plan shipped with the app', () {
-      final source = File('assets/floor_plans/main_floor.json')
-          .readAsStringSync();
+    test('the app\'s own floor plan file loads', () {
+      // Whatever you've saved from the app: it must still be valid.
+      final plan = FloorPlan.parse(
+        File('assets/floor_plans/main_floor.json').readAsStringSync(),
+      );
+      expect(plan.width, greaterThan(0));
+      expect(plan.floorOutline.length, greaterThanOrEqualTo(3));
+    });
+
+    // The rest use test/fixtures/main_floor.json, a fixed copy, so saving a
+    // new design from the app doesn't change what the tests expect.
+    test('reads the sample plan', () {
+      final source = File('test/fixtures/main_floor.json').readAsStringSync();
       final plan = FloorPlan.parse(source);
 
       expect(plan.name, 'Main floor');

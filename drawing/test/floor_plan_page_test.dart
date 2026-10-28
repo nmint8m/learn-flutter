@@ -28,7 +28,7 @@ void main() {
   // Read the real sample plan once, and hand it to the page directly: loading
   // assets inside widget tests doesn't reliably finish.
   final plan = FloorPlan.parse(
-    File('assets/floor_plans/main_floor.json').readAsStringSync(),
+    File('test/fixtures/main_floor.json').readAsStringSync(),
   );
   late _MemoryRepository repository;
 
@@ -55,6 +55,19 @@ void main() {
   Finder palette(String item) => find.byKey(ValueKey('palette-$item'));
   final moveButton = find.byKey(const ValueKey('move'));
   final editButton = find.byKey(const ValueKey('edit'));
+  final title = find.byKey(const ValueKey('selection-title'));
+
+  // The selection bar is always there; with nothing selected its buttons
+  // are disabled and the name is blank.
+  void expectNothingSelected(WidgetTester tester) {
+    for (final key in ['move', 'edit', 'save-item']) {
+      final button = tester.widget<ButtonStyleButton>(
+        find.byKey(ValueKey(key)),
+      );
+      expect(button.onPressed, isNull, reason: '$key disabled');
+    }
+    expect(tester.widget<Text>(title).data, isEmpty);
+  }
 
   testWidgets('each step shows its own panel items', (tester) async {
     await openPage(tester);
@@ -90,7 +103,7 @@ void main() {
   ) async {
     await openPage(tester);
     await goToStep(tester, 'tableAndSeat');
-    expect(moveButton, findsNothing);
+    expectNothingSelected(tester);
 
     await tester.tap(find.byKey(const ValueKey('table-T1')));
     await tester.pumpAndSettle();
@@ -103,7 +116,7 @@ void main() {
     // Tapping empty floor clears the selection.
     await tester.tapAt(floorPoint(tester, const Offset(20, 21)));
     await tester.pumpAndSettle();
-    expect(moveButton, findsNothing);
+    expectNothingSelected(tester);
   });
 
   testWidgets('step 1 hides tables and shows rulers; step 2 the reverse', (
@@ -123,7 +136,7 @@ void main() {
     final t1 = plan.tableById('T1')!;
     await tester.tapAt(floorPoint(tester, Offset(t1.x, t1.y)));
     await tester.pumpAndSettle();
-    expect(moveButton, findsNothing);
+    expectNothingSelected(tester);
 
     await goToStep(tester, 'tableAndSeat');
     expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
@@ -146,13 +159,90 @@ void main() {
     expect(top.left, left.right);
   });
 
+  testWidgets('the selection bar sits above the ruler: name left, buttons '
+      'right', (tester) async {
+    await openPage(tester);
+    final ruler = tester.getRect(find.byKey(const ValueKey('ruler-top')));
+    final save = tester.getRect(find.byKey(const ValueKey('save-item')));
+    expect(save.bottom, lessThanOrEqualTo(ruler.top));
+
+    // Selecting the entrance door fills in the name; the bar doesn't move.
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(const ValueKey('ruler-top'))), ruler);
+    final name = tester.getRect(find.text('Entrance · Door · 1.5 m'));
+    final move = tester.getRect(moveButton);
+    expect(name.right, lessThanOrEqualTo(move.left));
+    expect(name.top, lessThan(ruler.top));
+    expect(tester.widget<ButtonStyleButton>(moveButton).onPressed, isNotNull);
+  });
+
   testWidgets('step 1 selects doors', (tester) async {
     await openPage(tester);
 
     // The entrance door is centered at (20, 24).
     await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
     await tester.pumpAndSettle();
-    expect(find.text('Entrance · Door'), findsOneWidget);
+    expect(find.text('Entrance · Door · 1.5 m'), findsOneWidget);
+  });
+
+  testWidgets('tapping a wall shows its start and end', (tester) async {
+    await openPage(tester);
+
+    // The inner kitchen wall.
+    await tester.tapAt(floorPoint(tester, const Offset(30, 5)));
+    await tester.pumpAndSettle();
+    expect(find.text('Wall · (30, 0) → (40, 10)'), findsOneWidget);
+
+    // An outer wall: selectable and movable, but has no name to edit.
+    await tester.tapAt(floorPoint(tester, const Offset(10, 23.9)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Outer wall · '), findsOneWidget);
+    final edit = tester.widget<ButtonStyleButton>(editButton);
+    expect(edit.onPressed, isNull);
+    expect(moveButton, findsOneWidget);
+  });
+
+  testWidgets('Move on a wall drags its start or end point', (tester) async {
+    await openPage(tester);
+
+    Future<void> drag(Offset from, Offset to) async {
+      final start = floorPoint(tester, from);
+      final step = (floorPoint(tester, to) - start) / 10;
+      final gesture = await tester.startGesture(start);
+      for (var i = 0; i < 10; i++) {
+        await gesture.moveBy(step);
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    // Select the bottom outer wall, (40, 24) → (0, 24), and turn on Move.
+    // (Its ends are clear of the toolbar at the top right.)
+    await tester.tapAt(floorPoint(tester, const Offset(10, 23.9)));
+    await tester.pumpAndSettle();
+    expect(find.text('Outer wall · (40, 24) → (0, 24)'), findsOneWidget);
+    await tester.tap(moveButton);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Drag the Start or End point'), findsOneWidget);
+
+    // Drag the end point 2 units right: only that end moves. The drags start
+    // a little inside the floor (the ends sit on its edge); anywhere within
+    // a fingertip of an end grabs it, and the end snaps on release.
+    await drag(const Offset(0.3, 23.7), const Offset(2.3, 23.7));
+    expect(find.text('Outer wall · (40, 24) → (2, 24)'), findsOneWidget);
+
+    // Drag the start point 1 unit up.
+    await drag(const Offset(39.7, 23.7), const Offset(39.7, 22.7));
+    expect(find.text('Outer wall · (40, 23) → (2, 24)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('save-item')));
+    await tester.pumpAndSettle();
+    final outline = repository.saved!.floorOutline;
+    expect(outline, contains(const Offset(40, 23)));
+    expect(outline, contains(const Offset(2, 24)));
+    expect(outline, isNot(contains(const Offset(0, 24))));
   });
 
   testWidgets('review mode: items cannot be selected', (tester) async {
@@ -161,7 +251,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('table-T1')));
     await tester.pumpAndSettle();
-    expect(moveButton, findsNothing);
+    expectNothingSelected(tester);
   });
 
   testWidgets('Edit renames the item, Save writes it', (tester) async {
@@ -183,6 +273,228 @@ void main() {
     expect(find.text('Saved to memory'), findsOneWidget);
   });
 
+  testWidgets('Remove in the Edit panel removes the item, with Undo', (
+    tester,
+  ) async {
+    final removeButton = find.byKey(const ValueKey('remove-item'));
+    final table1 = find.byKey(const ValueKey('table-T1'));
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+
+    await tester.tap(table1);
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    await tester.tap(removeButton);
+    await tester.pumpAndSettle();
+
+    // Gone from the floor; the selection and side bar close.
+    expect(table1, findsNothing);
+    expect(removeButton, findsNothing);
+    expectNothingSelected(tester);
+    expect(find.text('Removed 1'), findsOneWidget);
+
+    // Undo brings it back, selected again.
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(table1, findsOneWidget);
+    expect(moveButton, findsOneWidget);
+
+    // Remove again and save: the saved plan has no table 1.
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    await tester.tap(removeButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    expect(repository.saved!.tableById('T1'), isNull);
+    expect(repository.saved!.tables, hasLength(plan.tables.length - 1));
+  });
+
+  testWidgets('Remove works for room items too', (tester) async {
+    await openPage(tester);
+    final before = plan.elements.whereType<DoorElement>().length;
+
+    // The entrance door.
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('remove-item')));
+    await tester.pumpAndSettle();
+    expect(find.text('Removed Entrance'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    expect(
+      repository.saved!.elements.whereType<DoorElement>(),
+      hasLength(before - 1),
+    );
+  });
+
+  testWidgets('Edit sets a door\'s length in meters', (tester) async {
+    final length = find.byKey(const ValueKey('item-length'));
+    await openPage(tester);
+
+    // The entrance door: 3 units = 1.5 m.
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(length).controller!.text, '1.5');
+
+    // + twice: 1.7 m. The toolbar shows the new length right away.
+    await tester.tap(find.byKey(const ValueKey('length-plus')));
+    await tester.tap(find.byKey(const ValueKey('length-plus')));
+    await tester.pumpAndSettle();
+    expect(find.text('Entrance · Door · 1.7 m'), findsOneWidget);
+
+    // Typing works too, and a bad value is refused with a message.
+    await tester.enterText(length, 'abc');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Enter a length'), findsOneWidget);
+    expect(find.text('Entrance · Door · 1.7 m'), findsOneWidget);
+    await tester.enterText(length, '2,25');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Enter a length'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    final door = repository.saved!.elements.whereType<DoorElement>().first;
+    expect(door.width, 4.5); // 2.25 m / 0.5 m per unit
+  });
+
+  testWidgets('tables have no length field', (tester) async {
+    await openPage(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('item-name')), findsOneWidget);
+    expect(find.byKey(const ValueKey('item-length')), findsNothing);
+  });
+
+  testWidgets('Edit sets a fixture\'s width and height in meters', (
+    tester,
+  ) async {
+    final width = find.byKey(const ValueKey('item-width'));
+    final height = find.byKey(const ValueKey('item-height'));
+    String text(Finder f) => tester.widget<TextField>(f).controller!.text;
+    await openPage(tester);
+
+    // The kitchen: 9.6 × 9.6 units = 4.8 × 4.8 m, centered at (35, 5).
+    await tester.tapAt(floorPoint(tester, const Offset(35, 5)));
+    await tester.pumpAndSettle();
+    expect(find.text('Kitchen · Fixture · 4.8 × 4.8 m'), findsOneWidget);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    expect(text(width), '4.8');
+    expect(text(height), '4.8');
+    expect(find.byKey(const ValueKey('item-length')), findsNothing);
+    expect(find.byKey(const ValueKey('item-diameter')), findsNothing);
+
+    await tester.enterText(width, '3');
+    await tester.tap(find.byKey(const ValueKey('height-minus')));
+    await tester.pumpAndSettle();
+    expect(text(height), '4.7');
+    expect(find.text('Kitchen · Fixture · 3 × 4.7 m'), findsWidgets);
+
+    // Out of range: shows an error and keeps the last good size.
+    await tester.enterText(width, '0.1');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Enter a width from'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    final kitchen = repository.saved!.elements
+        .whereType<FixtureElement>()
+        .firstWhere((f) => f.label == 'Kitchen');
+    expect(kitchen.width, 6); // 3 m
+    expect(kitchen.height, closeTo(9.4, 1e-9)); // 4.7 m
+    expect((kitchen.x, kitchen.y), (35, 5)); // Same center.
+  });
+
+  testWidgets('Edit sets a plant\'s diameter', (tester) async {
+    final diameter = find.byKey(const ValueKey('item-diameter'));
+    await openPage(tester);
+
+    // A plant: 1.6 units = 0.8 m across, centered at (15.2, 13.2).
+    await tester.tapAt(floorPoint(tester, const Offset(15.2, 13.2)));
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('item-width')), findsNothing);
+    expect(tester.widget<TextField>(diameter).controller!.text, '0.8');
+
+    await tester.tap(find.byKey(const ValueKey('diameter-plus')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    final plant = repository.saved!.elements
+        .whereType<FixtureElement>()
+        .firstWhere((f) => (f.x, f.y) == (15.2, 13.2));
+    // 0.9 m = 1.8 units, and still round.
+    expect(plant.width, closeTo(1.8, 1e-9));
+    expect(plant.height, closeTo(1.8, 1e-9));
+  });
+
+  testWidgets('Edit picks the wall a door sits on', (tester) async {
+    await openPage(tester);
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    // Currently on the bottom outer wall.
+    expect(find.text('Outer wall 5 · (40, 24) → (0, 24)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('item-wall')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Outer wall 4 · (40, 0) → (40, 24)').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Outer wall 4 · (40, 0) → (40, 24)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await tester.pumpAndSettle();
+    final door = repository.saved!.elements.whereType<DoorElement>().firstWhere(
+      (d) => d.label == 'Entrance',
+    );
+    // On the right wall, as close to where it was as fits, turned upright.
+    expect((door.x, door.y, door.angle), (40.0, 22.5, 90.0));
+  });
+
+  testWidgets('Move slides a door onto the nearest wall', (tester) async {
+    await openPage(tester);
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await tester.pumpAndSettle();
+    await tester.tap(moveButton);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('sticks to the'), findsOneWidget);
+
+    // Drag from the door toward the left outer wall (x = 0).
+    final start = floorPoint(tester, const Offset(20, 23.5));
+    final step = (floorPoint(tester, const Offset(1, 18)) - start) / 20;
+    final gesture = await tester.startGesture(start);
+    for (var i = 0; i < 20; i++) {
+      await gesture.moveBy(step);
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('save-item')));
+    await tester.pumpAndSettle();
+    final door = repository.saved!.elements.whereType<DoorElement>().firstWhere(
+      (d) => d.label == 'Entrance',
+    );
+    expect(door.x, 0);
+    expect(door.angle, 90);
+    // The door moves as far as the finger did, from its own center
+    // (20, 24): (20, 24) + (-19, -5.5) = (1, 18.5), stuck to x = 0.
+    expect(door.y, closeTo(18.5, 0.11));
+  });
+
   testWidgets('Move drags the selected item without panning the floor', (
     tester,
   ) async {
@@ -194,7 +506,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(moveButton);
     await tester.pumpAndSettle();
-    expect(find.text('Done'), findsOneWidget);
+    // Move turns into Done (a check mark).
+    expect(
+      find.descendant(of: moveButton, matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
 
     // Drag 3 floor units to the right, starting on empty floor, in small
     // steps like a real finger.

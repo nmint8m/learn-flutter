@@ -1,0 +1,96 @@
+{
+  "id": "main-floor",
+  "name": "Main floor",
+  "width": 40,
+  "height": 24,
+  "gridSize": 1,
+  "outline": [[0, 12], [26, 12], [26, 0], [40, 0], [40, 24], [0, 24]],
+  "elements": [
+    { "type": "wall", "points": [[30, 0], [30, 10], [40, 10]] },
+    { "type": "door", "x": 20, "y": 24, "width": 3, "label": "Entrance" },
+    { "type": "door", "x": 30, "y": 7, "width": 2, "orientation": "vertical" },
+    {
+      "type": "fixture", "label": "Kitchen",
+      "shape": "rect", "x": 35, "y": 5, "width": 9.6, "height": 9.6,
+      "color": "#ECEFF1"
+    },
+    { "type": "fixture", "shape": "circle", "x": 1.6, "y": 22.4, "width": 1.6, "height": 1.6, "color": "#A5D6A7" },
+    { "type": "fixture", "shape": "circle", "x": 15.2, "y": 13.2, "width": 1.6, "height": 1.6, "color": "#A5D6A7" },
+    { "type": "fixture", "shape": "circle", "x": 29, "y": 22.6, "width": 1.6, "height": 1.6, "color": "#A5D6A7" }
+  ],
+  "tables": [
+    {
+      "id": "BAR", "label": "Bar",
+      "shape": "roundedRect", "cornerRadius": 0.6,
+      "x": 21, "y": 13.4, "width": 8, "height": 2,
+      "seats": { "bottom": 4 },
+      "statusPerSeat": true
+    },
+    {
+      "id": "C1", "label": "Corner",
+      "shape": "quarterCircle", "corner": "bottomRight",
+      "x": 3, "y": 3, "width": 4.6, "height": 4.6,
+      "seats": {
+        "custom": [
+          { "x": 2.72, "y": -0.95 },
+          { "x": 1.38, "y": 1.38 },
+          { "x": -0.95, "y": 2.72 }
+        ]
+      }
+    },
+    {
+      "id": "T1", "label": "1",
+      "shape": "roundedRect",
+      "x": 5, "y": 10, "width": 4, "height": 2,
+      "seats": { "top": 2, "bottom": 2 }
+    },
+    {
+      "id": "T2", "label": "2",
+      "shape": "circle",
+      "x": 10.5, "y": 4, "width": 3, "height": 3,
+      "seats": { "around": 4 }
+    },
+    {
+      "id": "T3", "label": "3",
+      "shape": "rect",
+      "x": 28, "y": 3.5, "width": 2, "height": 2,
+      "seats": { "top": 1, "bottom": 1 }
+    },
+    {
+      "id": "T4", "label": "4",
+      "shape": "rect",
+      "x": 5, "y": 17, "width": 2, "height": 2, "rotation": 45,
+      "seats": { "left": 1, "right": 1 }
+    },
+    {
+      "id": "T5", "label": "5",
+      "shape": "roundedRect",
+      "x": 13.5, "y": 19.5, "width": 6, "height": 2.5,
+      "seats": { "top": 3, "bottom": 3, "left": 1, "right": 1 }
+    },
+    {
+      "id": "T6", "label": "6",
+      "shape": "circle",
+      "x": 25, "y": 19.5, "width": 3.5, "height": 3.5,
+      "seats": { "around": 6 }
+    },
+    {
+      "id": "T7", "label": "7",
+      "shape": "roundedRect",
+      "x": 31.5, "y": 17, "width": 2, "height": 4,
+      "seats": { "left": 2, "right": 2 }
+    },
+    {
+      "id": "B1", "label": "Booth 1",
+      "shape": "semicircle", "side": "left",
+      "x": 38.2, "y": 14, "width": 2.6, "height": 5.2,
+      "seats": { "custom": [ { "x": -2.0, "y": -1.2 }, { "x": -2.0, "y": 1.2 } ] }
+    },
+    {
+      "id": "B2", "label": "Booth 2",
+      "shape": "semicircle", "side": "left",
+      "x": 38.2, "y": 19.5, "width": 2.6, "height": 5.2,
+      "seats": { "custom": [ { "x": -2.0, "y": -1.2 }, { "x": -2.0, "y": 1.2 } ] }
+    }
+  ]
+}
