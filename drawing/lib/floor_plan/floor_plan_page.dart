@@ -215,6 +215,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                             : null,
                         onSelectedDragEnd: () =>
                             _change(snapItem(_edited ?? plan, selected!)),
+                        // Step 1 is about the room: tables are hidden and
+                        // rulers help place walls and decor.
+                        showTables: _step != DesignStep.roomAndDecor,
+                        showRulers: _step == DesignStep.roomAndDecor,
                       ),
                     ),
                   ),

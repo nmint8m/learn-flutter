@@ -29,6 +29,8 @@ class FloorPlanView extends StatefulWidget {
     this.onItemDropped,
     this.onSelectedDrag,
     this.onSelectedDragEnd,
+    this.showTables = true,
+    this.showRulers = false,
   });
 
   final FloorPlan plan;
@@ -52,6 +54,13 @@ class FloorPlanView extends StatefulWidget {
   final ValueChanged<Offset>? onSelectedDrag;
   final VoidCallback? onSelectedDragEnd;
 
+  /// False hides the tables and their seats, e.g. while designing the room.
+  final bool showTables;
+
+  /// Shows rulers in floor units along the top and left edges. They stay in
+  /// place while zooming and panning, and their marks follow the floor.
+  final bool showRulers;
+
   @override
   State<FloorPlanView> createState() => _FloorPlanViewState();
 }
@@ -60,6 +69,18 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   /// Where the last move-mode drag update was, to turn positions into steps.
   /// Kept here, not in build: every update rebuilds the view.
   Offset? _lastDrag;
+
+  /// The current zoom and pan. The rulers read it to line up with the floor.
+  final _transform = TransformationController();
+
+  /// Thickness of each ruler, in pixels.
+  static const _rulerSize = 24.0;
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,20 +91,34 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :onFloorTap,
       :onSelectedDrag,
       :onSelectedDragEnd,
+      :showTables,
+      :showRulers,
     ) = widget;
     final moving = onSelectedDrag != null;
     final colors = Theme.of(context).colorScheme;
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        // The rulers take a strip on the top and left; the floor gets the rest.
+        final ruler = showRulers ? _rulerSize : 0.0;
+        final viewport = Size(
+          math.max(0, constraints.maxWidth - ruler),
+          math.max(0, constraints.maxHeight - ruler),
+        );
+
         // How many pixels one floor unit takes, so the whole plan fits.
         final pixelsPerUnit = math.min(
-          constraints.maxWidth / plan.width,
-          constraints.maxHeight / plan.height,
+          viewport.width / plan.width,
+          viewport.height / plan.height,
         );
         final floorSize = Size(
           plan.width * pixelsPerUnit,
           plan.height * pixelsPerUnit,
+        );
+        // Where the (centered) floor's top-left corner is, before zoom/pan.
+        final floorOrigin = Offset(
+          (viewport.width - floorSize.width) / 2,
+          (viewport.height - floorSize.height) / 2,
         );
 
         // Converts a center + size in floor units to a pixel rect.
@@ -152,20 +187,22 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                     pixelsPerUnit: pixelsPerUnit,
                     selected: selected == ElementRef(index),
                   ),
-              for (final table in plan.tables)
-                _TableWidget(
-                  key: ValueKey('table-${table.id}'),
-                  table: table,
-                  rect: toPixels(table.x, table.y, table.width, table.height),
-                  pixelsPerUnit: pixelsPerUnit,
-                  statusOf: statusOf,
-                  selected: selected == TableRef(table.id),
-                ),
+              if (showTables)
+                for (final table in plan.tables)
+                  _TableWidget(
+                    key: ValueKey('table-${table.id}'),
+                    table: table,
+                    rect: toPixels(table.x, table.y, table.width, table.height),
+                    pixelsPerUnit: pixelsPerUnit,
+                    statusOf: statusOf,
+                    selected: selected == TableRef(table.id),
+                  ),
             ],
           ),
         );
 
-        return InteractiveViewer(
+        final viewer = InteractiveViewer(
+          transformationController: _transform,
           // Move mode keeps the current zoom and position.
           panEnabled: !moving,
           scaleEnabled: !moving,
@@ -179,6 +216,54 @@ class _FloorPlanViewState extends State<FloorPlanView> {
               SizedBox.fromSize(size: floorSize, child: floor),
             ),
           ),
+        );
+        if (!showRulers) return viewer;
+
+        _RulerPainter rulerPainter(Axis axis) => _RulerPainter(
+          axis: axis,
+          transform: _transform,
+          floorStart: axis == Axis.horizontal ? floorOrigin.dx : floorOrigin.dy,
+          floorLength: axis == Axis.horizontal ? plan.width : plan.height,
+          pixelsPerUnit: pixelsPerUnit,
+          background: colors.surfaceContainer,
+          floorBand: colors.surfaceContainerHighest,
+          tickColor: colors.onSurfaceVariant,
+        );
+
+        return Column(
+          children: [
+            SizedBox(
+              height: ruler,
+              child: Row(
+                children: [
+                  // The corner where the two rulers meet.
+                  Container(width: ruler, color: colors.surfaceContainer),
+                  Expanded(
+                    child: CustomPaint(
+                      key: const ValueKey('ruler-top'),
+                      size: Size.infinite,
+                      painter: rulerPainter(Axis.horizontal),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: ruler,
+                    child: CustomPaint(
+                      key: const ValueKey('ruler-left'),
+                      size: Size.infinite,
+                      painter: rulerPainter(Axis.vertical),
+                    ),
+                  ),
+                  Expanded(child: ClipRect(child: viewer)),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
@@ -216,6 +301,141 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       },
     );
   }
+}
+
+/// A ruler in floor units along one edge of the floor view.
+///
+/// It repaints whenever [transform] changes, so its marks stay lined up with
+/// the floor while zooming and panning. Marks get denser as you zoom in.
+class _RulerPainter extends CustomPainter {
+  _RulerPainter({
+    required this.axis,
+    required this.transform,
+    required this.floorStart,
+    required this.floorLength,
+    required this.pixelsPerUnit,
+    required this.background,
+    required this.floorBand,
+    required this.tickColor,
+  }) : super(repaint: transform);
+
+  final Axis axis;
+  final TransformationController transform;
+
+  /// Where the floor starts along this axis, in pixels, before zoom and pan.
+  final double floorStart;
+
+  /// The floor's width (top ruler) or height (left ruler), in floor units.
+  final double floorLength;
+  final double pixelsPerUnit;
+  final Color background;
+  final Color floorBand;
+  final Color tickColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final horizontal = axis == Axis.horizontal;
+    final along = horizontal ? size.width : size.height;
+    final across = horizontal ? size.height : size.width;
+
+    // InteractiveViewer only scales and moves, so the matrix is simple:
+    // storage[0] is the scale, storage[12] / [13] the x / y offset.
+    final m = transform.value.storage;
+    final scale = m[0];
+    final shift = horizontal ? m[12] : m[13];
+    double toScreen(double units) =>
+        shift + (floorStart + units * pixelsPerUnit) * scale;
+    final pixelsPerShownUnit = pixelsPerUnit * scale;
+
+    canvas.drawRect(Offset.zero & size, Paint()..color = background);
+
+    // A lighter band where the floor is.
+    final start = toScreen(0);
+    final end = toScreen(floorLength);
+    canvas.drawRect(
+      horizontal
+          ? Rect.fromLTRB(start, 0, end, across)
+          : Rect.fromLTRB(0, start, across, end),
+      Paint()..color = floorBand,
+    );
+
+    // The smallest steps that are still far enough apart to read.
+    const steps = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
+    final minor = steps.firstWhere(
+      (s) => s * pixelsPerShownUnit >= 6,
+      orElse: () => steps.last,
+    );
+    final labelled = steps.firstWhere(
+      (s) => s >= minor && s * pixelsPerShownUnit >= 36,
+      orElse: () => steps.last,
+    );
+
+    final tick = Paint()
+      ..color = tickColor
+      ..strokeWidth = 1;
+    final count = (floorLength / minor).floor();
+    for (var i = 0; i <= count; i++) {
+      final units = i * minor;
+      final at = toScreen(units);
+      if (at < -1 || at > along + 1) continue;
+
+      final isLabelled = _isMultiple(units, labelled);
+      final length = isLabelled ? across * 0.5 : across * 0.25;
+      if (horizontal) {
+        canvas.drawLine(Offset(at, across - length), Offset(at, across), tick);
+      } else {
+        canvas.drawLine(Offset(across - length, at), Offset(across, at), tick);
+      }
+
+      if (isLabelled) {
+        final text = TextPainter(
+          text: TextSpan(
+            text: _format(units),
+            style: TextStyle(fontSize: 9, color: tickColor),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        text.paint(canvas, horizontal ? Offset(at + 2, 1) : Offset(1, at + 1));
+      }
+    }
+
+    // A line where the ruler meets the floor.
+    final edge = Paint()
+      ..color = tickColor.withValues(alpha: 0.4)
+      ..strokeWidth = 1;
+    if (horizontal) {
+      canvas.drawLine(
+        Offset(0, across - 0.5),
+        Offset(along, across - 0.5),
+        edge,
+      );
+    } else {
+      canvas.drawLine(
+        Offset(across - 0.5, 0),
+        Offset(across - 0.5, along),
+        edge,
+      );
+    }
+  }
+
+  static bool _isMultiple(double value, double step) {
+    final ratio = value / step;
+    return (ratio - ratio.roundToDouble()).abs() < 1e-6;
+  }
+
+  static String _format(double units) =>
+      units == units.roundToDouble() ? '${units.toInt()}' : '$units';
+
+  @override
+  bool shouldRepaint(_RulerPainter old) =>
+      old.axis != axis ||
+      old.transform != transform ||
+      old.floorStart != floorStart ||
+      old.floorLength != floorLength ||
+      old.pixelsPerUnit != pixelsPerUnit ||
+      old.background != background ||
+      old.floorBand != floorBand ||
+      old.tickColor != tickColor;
 }
 
 /// Paints everything that never reacts to taps, in one pass.

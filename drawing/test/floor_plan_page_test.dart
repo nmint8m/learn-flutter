@@ -106,12 +106,48 @@ void main() {
     expect(moveButton, findsNothing);
   });
 
-  testWidgets('step 1 selects doors, not tables', (tester) async {
+  testWidgets('step 1 hides tables and shows rulers; step 2 the reverse', (
+    tester,
+  ) async {
+    final topRuler = find.byKey(const ValueKey('ruler-top'));
+    final leftRuler = find.byKey(const ValueKey('ruler-left'));
     await openPage(tester);
 
-    await tester.tap(find.byKey(const ValueKey('table-T1')));
+    expect(find.byKey(const ValueKey('table-T1')), findsNothing);
+    expect(topRuler, findsOneWidget);
+    expect(leftRuler, findsOneWidget);
+    // Room items are still drawn.
+    expect(find.text('Kitchen'), findsOneWidget);
+
+    // Tapping where table 1 is selects nothing.
+    final t1 = plan.tableById('T1')!;
+    await tester.tapAt(floorPoint(tester, Offset(t1.x, t1.y)));
     await tester.pumpAndSettle();
     expect(moveButton, findsNothing);
+
+    await goToStep(tester, 'tableAndSeat');
+    expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
+    expect(topRuler, findsNothing);
+    expect(leftRuler, findsNothing);
+
+    await goToStep(tester, 'review');
+    expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
+    expect(topRuler, findsNothing);
+  });
+
+  testWidgets('the rulers sit beside the floor, not on it', (tester) async {
+    await openPage(tester);
+    final floor = tester.getRect(find.byType(DragTarget<PaletteItem>));
+    final top = tester.getRect(find.byKey(const ValueKey('ruler-top')));
+    final left = tester.getRect(find.byKey(const ValueKey('ruler-left')));
+
+    expect(top.bottom, lessThanOrEqualTo(floor.top));
+    expect(left.right, lessThanOrEqualTo(floor.left));
+    expect(top.left, left.right);
+  });
+
+  testWidgets('step 1 selects doors', (tester) async {
+    await openPage(tester);
 
     // The entrance door is centered at (20, 24).
     await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
