@@ -39,20 +39,20 @@ class FloorPlan {
   /// A bar slot's default width and depth, in meters, and the range they're
   /// kept in.
   static const defaultBarSlotWidth = 0.6;
-  static const defaultBarSlotDepth = 0.6;
+  static const defaultBarSlotDepth = 0.4;
   static const barSlotWidthRange = (0.6, 0.8);
   static const barSlotDepthRange = (0.4, 0.6);
 
   /// A square table's side, in meters: its default and range.
-  static const defaultSquareSeatWidth = 0.8;
-  static const squareSeatWidthRange = (0.6, 1.0);
+  static const defaultSquareSeatWidth = 0.7;
+  static const squareSeatWidthRange = (0.6, 0.8);
 
   /// A rectangle table's seat width, seat depth and buffer, in meters: their
   /// defaults and ranges. See [rectSeatWidth].
-  static const defaultRectSeatWidth = 0.8;
-  static const defaultRectSeatDepth = 0.5;
+  static const defaultRectSeatWidth = 0.6;
+  static const defaultRectSeatDepth = 0.4;
   static const defaultRectBuffer = 0.1;
-  static const rectSeatWidthRange = (0.6, 1.0);
+  static const rectSeatWidthRange = (0.6, 0.8);
   static const rectSeatDepthRange = (0.4, 0.6);
   static const rectBufferRange = (0.0, 0.3);
 
