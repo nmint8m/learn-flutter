@@ -249,18 +249,116 @@ FloorTable? sidedTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
   _ => null,
 };
 
-/// Whether [table] is square (a rounded square table).
-bool isSquareTable(FloorTable table) => table.width == table.height;
+/// Whether [table] is a square table ([FloorTable.square]).
+bool isSquareTable(FloorTable table) => table.square;
+
+/// The most seats a rectangle table can have along each long side (top and
+/// bottom) and at each end (left and right). Square tables have one a side.
+const maxSeatsPerLongSide = 4;
+const maxSeatsPerEnd = 2;
+
+/// The fewest seats a rectangle table can have along each long side and at
+/// each end. The long sides always have more seats than the ends.
+const minSeatsPerLongSide = 2;
+const minSeatsPerEnd = 1;
+
+bool _isLongSide(SeatSide side) =>
+    side == SeatSide.top || side == SeatSide.bottom;
+
+SeatSide _opposite(SeatSide side) => switch (side) {
+  SeatSide.top => SeatSide.bottom,
+  SeatSide.bottom => SeatSide.top,
+  SeatSide.left => SeatSide.right,
+  SeatSide.right => SeatSide.left,
+};
 
 /// How many seats a side gets when it's switched on: one per side on a
-/// square table; two along each long side and one at each end on a
-/// rectangle.
-int defaultSeatsOnSide(FloorTable table, SeatSide side) => isSquareTable(table)
-    ? 1
-    : switch (side) {
-        SeatSide.top || SeatSide.bottom => 2,
-        SeatSide.left || SeatSide.right => 1,
-      };
+/// square table; on a rectangle, as many as the opposite side, or two along
+/// a long side and one at an end.
+int defaultSeatsOnSide(FloorTable table, SeatSide side) {
+  if (isSquareTable(table)) return 1;
+  final opposite = seatsOnSide(table, _opposite(side));
+  if (opposite > 0) return opposite;
+  return _isLongSide(side) ? 2 : 1;
+}
+
+/// The seats on each long side and at each end of a rectangle table: the
+/// larger of the two sides (one may be switched off).
+({int long, int ends}) rectangleSeats(FloorTable table) => (
+  long: math.max(table.seatLayout.top, table.seatLayout.bottom),
+  ends: math.max(table.seatLayout.left, table.seatLayout.right),
+);
+
+/// [table] sized by the plan's settings: a square table's side is
+/// [FloorPlan.squareSeatWidth]; a rectangle follows
+/// [FloorPlan.rectSeatWidth]'s formula. Bars and other tables are returned
+/// as they are.
+FloorTable sizeTable(FloorPlan plan, FloorTable table) {
+  if (table.bar || table.shape.shape != TableShape.roundedRect) return table;
+  final mpu = plan.metersPerUnit;
+  if (isSquareTable(table)) {
+    final side = plan.squareSeatWidth / mpu;
+    return table.copyWith(width: side, height: side);
+  }
+  final (:long, :ends) = rectangleSeats(table);
+  final buffer = 2 * plan.rectBuffer;
+  final across =
+      math.max(ends * plan.rectSeatWidth, 2 * plan.rectSeatDepth) + buffer;
+  // At least one seat's depth along, so a table without long-side seats
+  // still has a length.
+  final along = math.max(long, 1) * plan.rectSeatDepth + buffer;
+  // The table's width (x) runs along the long sides; its height across.
+  return table.copyWith(width: along / mpu, height: across / mpu);
+}
+
+/// [plan] with table [id] sized by [sizeTable]. If it was inside the room,
+/// it's nudged back in should it now poke through a wall.
+FloorPlan _resizeTable(FloorPlan before, FloorPlan plan, String id) {
+  final sized = plan.copyWith(
+    tables: [for (final t in plan.tables) t.id == id ? sizeTable(plan, t) : t],
+  );
+  final was = before.tableById(id);
+  return was != null && tableInsideRoom(before, was)
+      ? placeTableInsideRoom(sized, id)
+      : sized;
+}
+
+/// [plan] with a rectangle table's seats set: [long] on each long side
+/// ([minSeatsPerLongSide] to [maxSeatsPerLongSide]) and [ends] at each end
+/// ([minSeatsPerEnd] to [maxSeatsPerEnd]). The long sides must end up with
+/// more seats than the ends, or nothing changes. Sides that are switched off
+/// stay off. The table is resized to fit.
+FloorPlan setRectangleSeats(
+  FloorPlan plan,
+  FloorItemRef ref, {
+  int? long,
+  int? ends,
+}) {
+  final table = sidedTable(plan, ref);
+  if (table == null || isSquareTable(table)) return plan;
+  final current = rectangleSeats(table);
+  final l = (long ?? (current.long > 0 ? current.long : minSeatsPerLongSide))
+      .clamp(minSeatsPerLongSide, maxSeatsPerLongSide);
+  final e = (ends ?? (current.ends > 0 ? current.ends : minSeatsPerEnd)).clamp(
+    minSeatsPerEnd,
+    maxSeatsPerEnd,
+  );
+  if (l <= e) return plan;
+  final layout = table.seatLayout;
+  int keep(int now, int n) => now == 0 ? 0 : n;
+  final changed = table.copyWith(
+    seatLayout: layout.copyWith(
+      top: keep(layout.top, l),
+      bottom: keep(layout.bottom, l),
+      left: keep(layout.left, e),
+      right: keep(layout.right, e),
+    ),
+  );
+  final next = plan.copyWith(
+    tables: [for (final t in plan.tables) t.id == table.id ? changed : t],
+  );
+  return _resizeTable(plan, next, table.id);
+}
 
 /// The number of seats on [side] of [table].
 int seatsOnSide(FloorTable table, SeatSide side) => switch (side) {
@@ -294,31 +392,50 @@ FloorPlan setSeatSide(
       SeatSide.right => layout.copyWith(right: count),
     },
   );
-  return plan.copyWith(
+  final next = plan.copyWith(
     tables: [for (final t in plan.tables) t.id == table.id ? changed : t],
   );
+  // A rectangle's size follows its seats.
+  return isSquareTable(table) ? next : _resizeTable(plan, next, table.id);
 }
 
-/// [plan] with the table turned to [degrees] (clockwise, around its center;
-/// kept within 0–360).
-FloorPlan rotateTable(FloorPlan plan, FloorItemRef ref, double degrees) {
-  if (ref case TableRef(:final id)) {
-    final angle = degrees % 360;
-    return plan.copyWith(
-      tables: [
-        for (final t in plan.tables)
-          t.id == id ? t.copyWith(rotation: angle) : t,
-      ],
-    );
+/// [plan] with the table or fixture turned to [degrees] (clockwise, around
+/// its center; kept within 0–360). Other items are left unchanged.
+FloorPlan rotateItem(FloorPlan plan, FloorItemRef ref, double degrees) {
+  final angle = degrees % 360;
+  switch (ref) {
+    case TableRef(:final id):
+      return plan.copyWith(
+        tables: [
+          for (final t in plan.tables)
+            t.id == id ? t.copyWith(rotation: angle) : t,
+        ],
+      );
+    case ElementRef(:final index):
+      if (plan.elements[index] case final FixtureElement f) {
+        return plan.copyWith(
+          elements: [...plan.elements]..[index] = f.copyWith(rotation: angle),
+        );
+      }
+      return plan;
+    case OutlineEdgeRef():
+      return plan;
   }
-  return plan;
 }
+
+/// The rotation of a turnable item, in degrees: rounded rectangle and
+/// square tables, bars and fixtures. Null for anything else.
+double? itemRotation(FloorPlan plan, FloorItemRef ref) => switch (ref) {
+  TableRef() => (sidedTable(plan, ref) ?? barTable(plan, ref))?.rotation,
+  ElementRef(:final index) => switch (plan.elements[index]) {
+    FixtureElement(:final rotation) => rotation,
+    _ => null,
+  },
+  OutlineEdgeRef() => null,
+};
 
 /// The most seats a bar can have.
 const maxBarSeats = 10;
-
-/// Floor units of counter per bar seat (1 m at 0.5 m per unit).
-const barUnitsPerSeat = 2.0;
 
 /// The bar [ref] points at, or null.
 FloorTable? barTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
@@ -329,16 +446,21 @@ FloorTable? barTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
   _ => null,
 };
 
+/// A bar with [seats] seats, sized by the plan's bar slot: one
+/// [FloorPlan.barSlotWidth] of counter per seat, [FloorPlan.barSlotDepth]
+/// deep.
+FloorTable sizeBar(FloorPlan plan, FloorTable bar, int seats) => bar.copyWith(
+  width: seats * plan.barSlotWidth / plan.metersPerUnit,
+  height: plan.barSlotDepth / plan.metersPerUnit,
+  seatLayout: SeatLayout(bottom: seats),
+);
+
 /// [plan] with the bar's seats set to [seats] (1 to [maxBarSeats]), all on
 /// one side. The counter grows or shrinks with them, around its center.
 FloorPlan setBarSeats(FloorPlan plan, FloorItemRef ref, int seats) {
   final bar = barTable(plan, ref);
   if (bar == null) return plan;
-  final n = seats.clamp(1, maxBarSeats);
-  final changed = bar.copyWith(
-    width: n * barUnitsPerSeat,
-    seatLayout: SeatLayout(bottom: n),
-  );
+  final changed = sizeBar(plan, bar, seats.clamp(1, maxBarSeats));
   return plan.copyWith(
     tables: [for (final t in plan.tables) t.id == bar.id ? changed : t],
   );
@@ -949,3 +1071,88 @@ FloorPlan placeTableInsideRoom(FloorPlan plan, String id) {
   }
   return plan;
 }
+
+/// The smallest and largest bar slot width and depth, in meters.
+/// [plan] with a new bar slot size, in meters (kept within
+/// [FloorPlan.barSlotWidthRange] and [FloorPlan.barSlotDepthRange]), and
+/// every bar resized to it
+/// around its center. A bar that was inside the room is nudged back in if
+/// it now pokes through a wall.
+FloorPlan setBarSlot(
+  FloorPlan plan, {
+  required double widthMeters,
+  required double depthMeters,
+}) {
+  var changed = plan.copyWith(
+    barSlotWidth: _clamp(widthMeters, FloorPlan.barSlotWidthRange),
+    barSlotDepth: _clamp(depthMeters, FloorPlan.barSlotDepthRange),
+  );
+  changed = changed.copyWith(
+    tables: [
+      for (final t in changed.tables)
+        t.bar ? sizeBar(changed, t, t.seats.length) : t,
+    ],
+  );
+  for (final t in plan.tables) {
+    if (t.bar && tableInsideRoom(plan, t)) {
+      changed = placeTableInsideRoom(changed, t.id);
+    }
+  }
+  return changed;
+}
+
+double _clamp(double value, (double, double) range) =>
+    value.clamp(range.$1, range.$2).toDouble();
+
+/// [plan] with every table that [resized] picks out sized again by
+/// [sizeTable] after a settings change; tables that were inside the room
+/// are nudged back in.
+FloorPlan _resizeAll(
+  FloorPlan before,
+  FloorPlan plan,
+  bool Function(FloorTable) resized,
+) {
+  var changed = plan.copyWith(
+    tables: [for (final t in plan.tables) resized(t) ? sizeTable(plan, t) : t],
+  );
+  for (final t in before.tables) {
+    if (resized(t) && tableInsideRoom(before, t)) {
+      changed = placeTableInsideRoom(changed, t.id);
+    }
+  }
+  return changed;
+}
+
+bool _isSquare(FloorTable t) =>
+    t.shape.shape == TableShape.roundedRect && !t.bar && t.square;
+
+bool _isRectangle(FloorTable t) =>
+    t.shape.shape == TableShape.roundedRect && !t.bar && !t.square;
+
+/// [plan] with a new square table side, in meters (kept within
+/// [FloorPlan.squareSeatWidthRange]), and every square table resized.
+FloorPlan setSquareSettings(FloorPlan plan, {required double widthMeters}) =>
+    _resizeAll(
+      plan,
+      plan.copyWith(
+        squareSeatWidth: _clamp(widthMeters, FloorPlan.squareSeatWidthRange),
+      ),
+      _isSquare,
+    );
+
+/// [plan] with new rectangle table settings, in meters (each kept within
+/// its range), and every rectangle table resized.
+FloorPlan setRectangleSettings(
+  FloorPlan plan, {
+  required double widthMeters,
+  required double depthMeters,
+  required double bufferMeters,
+}) => _resizeAll(
+  plan,
+  plan.copyWith(
+    rectSeatWidth: _clamp(widthMeters, FloorPlan.rectSeatWidthRange),
+    rectSeatDepth: _clamp(depthMeters, FloorPlan.rectSeatDepthRange),
+    rectBuffer: _clamp(bufferMeters, FloorPlan.rectBufferRange),
+  ),
+  _isRectangle,
+);

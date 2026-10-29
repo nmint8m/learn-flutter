@@ -334,12 +334,13 @@ void main() {
       expect(sidedTable(plan, ElementRef(doorIndex)), isNull);
     });
 
-    test('switching a side off and on keeps nothing, then the default', () {
+    test('switching a side off and on matches the opposite side', () {
       final off = setSeatSide(plan, t5, SeatSide.top, included: false);
       expect(off.tableById('T5')!.seatLayout.top, 0);
       expect(off.tableById('T5')!.seats, hasLength(5));
       final on = setSeatSide(off, t5, SeatSide.top, included: true);
-      expect(on.tableById('T5')!.seatLayout.top, 2); // Rectangle default.
+      // Back on: as many as the opposite (bottom) side.
+      expect(on.tableById('T5')!.seatLayout.top, 3);
     });
 
     test('switching on a side that has seats keeps their number', () {
@@ -363,11 +364,11 @@ void main() {
     });
 
     test('rotation stays within 0–360', () {
-      expect(rotateTable(plan, t5, 90).tableById('T5')!.rotation, 90);
-      expect(rotateTable(plan, t5, 375).tableById('T5')!.rotation, 15);
-      expect(rotateTable(plan, t5, -15).tableById('T5')!.rotation, 345);
+      expect(rotateItem(plan, t5, 90).tableById('T5')!.rotation, 90);
+      expect(rotateItem(plan, t5, 375).tableById('T5')!.rotation, 15);
+      expect(rotateItem(plan, t5, -15).tableById('T5')!.rotation, 345);
       // Saved and read back.
-      final saved = FloorPlan.parse(rotateTable(plan, t5, 45).encode());
+      final saved = FloorPlan.parse(rotateItem(plan, t5, 45).encode());
       expect(saved.tableById('T5')!.rotation, 45);
     });
   });
@@ -453,7 +454,7 @@ void main() {
       final six = setBarSeats(withBar, ref, 6).tableById('T1')!;
       expect(six.seatLayout.bottom, 6);
       expect(six.seatLayout.top + six.seatLayout.left, 0);
-      expect(six.width, 12);
+      expect(six.width, closeTo(7.2, 1e-9)); // 6 × 0.6 m.
       expect((six.x, six.y), (20, 12));
       // Clamped to 1–10.
       expect(setBarSeats(withBar, ref, 15).tableById('T1')!.seats.length, 10);
@@ -463,6 +464,165 @@ void main() {
     test('a duplicated bar is still a bar', () {
       final (copied, copy) = duplicateItem(withBar, ref)!;
       expect(barTable(copied, copy), isNotNull);
+    });
+  });
+
+  test('rotateItem turns fixtures too, and is saved', () {
+    final kitchenIndex = plan.elements.indexWhere(
+      (e) => e is FixtureElement && e.label == 'Kitchen',
+    );
+    final kitchen = ElementRef(kitchenIndex);
+    expect(itemRotation(plan, kitchen), 0);
+    final turned = rotateItem(plan, kitchen, 390);
+    expect(itemRotation(turned, kitchen), 30);
+    final again = FloorPlan.parse(turned.encode());
+    expect((again.elements[kitchenIndex] as FixtureElement).rotation, 30);
+    // Doors and outer walls don't turn.
+    expect(itemRotation(plan, ElementRef(doorIndex)), isNull);
+    expect(rotateItem(plan, const OutlineEdgeRef(0), 90), same(plan));
+  });
+
+  group('bar slot', () {
+    final withBar = FloorPlan.parse('''
+      {"id": "p", "width": 40, "height": 24,
+       "tables": [
+         {"id": "B1", "label": "B1", "shape": "roundedRect",
+          "x": 20, "y": 12, "width": 10, "height": 2,
+          "seats": {"bottom": 5}, "statusPerSeat": true, "bar": true},
+         {"id": "T1", "label": "1", "shape": "rect",
+          "x": 5, "y": 5, "width": 2, "height": 2}]}
+    ''');
+
+    test('0.6 × 0.4 m slots make a 5-seat bar 3 m × 0.4 m', () {
+      final set = setBarSlot(withBar, widthMeters: 0.6, depthMeters: 0.4);
+      final b1 = set.tableById('B1')!;
+      expect(b1.width * set.metersPerUnit, closeTo(3, 1e-9));
+      expect(b1.height * set.metersPerUnit, closeTo(0.4, 1e-9));
+      expect(b1.seats, hasLength(5));
+      expect((b1.x, b1.y), (20, 12)); // Around its center.
+      // Other tables are left alone.
+      expect(set.tableById('T1')!.width, 2);
+    });
+
+    test('new seat counts and new bars use the slot', () {
+      final set = setBarSlot(withBar, widthMeters: 0.6, depthMeters: 0.4);
+      final seven = setBarSeats(set, const TableRef('B1'), 7);
+      expect(
+        seven.tableById('B1')!.width * seven.metersPerUnit,
+        closeTo(4.2, 1e-9),
+      );
+    });
+
+    test('a plan without a slot uses 0.6 m; saved values stay in range', () {
+      expect((withBar.barSlotWidth, withBar.barSlotDepth), (0.6, 0.6));
+      final wide = FloorPlan.parse('''
+        {"id": "p", "width": 10, "height": 10,
+         "barSlot": {"width": 1, "depth": 0.1}}
+      ''');
+      expect((wide.barSlotWidth, wide.barSlotDepth), (0.8, 0.4));
+    });
+
+    test('width is kept within 0.6–0.8 m, depth within 0.4–0.6 m', () {
+      final set = setBarSlot(withBar, widthMeters: 0.3, depthMeters: 2);
+      expect((set.barSlotWidth, set.barSlotDepth), (0.6, 0.6));
+    });
+
+    test('saved with the plan; the default is not written', () {
+      expect(withBar.toJson().containsKey('barSlot'), isFalse);
+      final set = setBarSlot(withBar, widthMeters: 0.7, depthMeters: 0.4);
+      final again = FloorPlan.parse(set.encode());
+      expect((again.barSlotWidth, again.barSlotDepth), (0.7, 0.4));
+    });
+  });
+
+  group('square and rectangle settings', () {
+    final tables = FloorPlan.parse('''
+      {"id": "p", "width": 40, "height": 24,
+       "tables": [
+         {"id": "R1", "label": "R1", "shape": "roundedRect",
+          "x": 20, "y": 12, "width": 4, "height": 2,
+          "seats": {"top": 4, "bottom": 4, "left": 2, "right": 2}},
+         {"id": "S1", "label": "S1", "shape": "roundedRect",
+          "x": 10, "y": 12, "width": 3, "height": 3,
+          "seats": {"top": 1, "bottom": 1, "left": 1, "right": 1}}]}
+    ''');
+    double meters(double units) => units * tables.metersPerUnit;
+
+    test('older plans: an equal-sided rounded table is a square', () {
+      expect(tables.tableById('S1')!.square, isTrue);
+      expect(tables.tableById('R1')!.square, isFalse);
+    });
+
+    test('rectangle: width and length follow the formula', () {
+      // width 0.8, depth 0.5, buffer 0.1; 2 seats per end, 4 per long side:
+      // width  = max(2 × 0.8, 2 × 0.5) + 0.2 = 1.8 m
+      // length = 4 × 0.5 + 0.2 = 2.2 m
+      final set = setRectangleSettings(
+        tables,
+        widthMeters: 0.8,
+        depthMeters: 0.5,
+        bufferMeters: 0.1,
+      );
+      final r1 = set.tableById('R1')!;
+      expect(meters(r1.width), closeTo(2.2, 1e-9)); // Length, along x.
+      expect(meters(r1.height), closeTo(1.8, 1e-9)); // Width, across.
+      expect((r1.x, r1.y), (20, 12));
+      // Squares are left alone.
+      expect(set.tableById('S1')!.width, 3);
+
+      // 1 seat per end: max(0.8, 1.0) + 0.2 = 1.2 m.
+      final fewer = setRectangleSeats(set, const TableRef('R1'), ends: 1);
+      expect(meters(fewer.tableById('R1')!.height), closeTo(1.2, 1e-9));
+    });
+
+    test(
+      'rectangle seats: length side 2–4, width side 1–2, length > width',
+      () {
+        final r1 = const TableRef('R1');
+        Object seats(FloorPlan p) => rectangleSeats(p.tableById('R1')!);
+        expect(seats(setRectangleSeats(tables, r1, long: 9, ends: 5)), (
+          long: 4,
+          ends: 2,
+        ));
+        expect(seats(setRectangleSeats(tables, r1, long: 2, ends: 1)), (
+          long: 2,
+          ends: 1,
+        ));
+        // 2 and 2 breaks the rule: nothing changes.
+        expect(setRectangleSeats(tables, r1, long: 2, ends: 2), same(tables));
+        // 1 along the length is raised to 2.
+        expect(seats(setRectangleSeats(tables, r1, long: 1, ends: 1)), (
+          long: 2,
+          ends: 1,
+        ));
+      },
+    );
+
+    test('square: every square table gets the width as its side', () {
+      final set = setSquareSettings(tables, widthMeters: 0.9);
+      final s1 = set.tableById('S1')!;
+      expect((meters(s1.width), meters(s1.height)), (0.9, 0.9));
+      expect(set.tableById('R1')!.width, 4); // Rectangles untouched.
+    });
+
+    test('settings are kept in range and saved', () {
+      final set = setRectangleSettings(
+        setSquareSettings(tables, widthMeters: 2),
+        widthMeters: 0.1,
+        depthMeters: 0.9,
+        bufferMeters: 0.2,
+      );
+      expect(set.squareSeatWidth, 1);
+      expect(
+        (set.rectSeatWidth, set.rectSeatDepth, set.rectBuffer),
+        (0.6, 0.6, 0.2),
+      );
+      final again = FloorPlan.parse(set.encode());
+      expect(again.squareSeatWidth, 1);
+      expect(
+        (again.rectSeatWidth, again.rectSeatDepth, again.rectBuffer),
+        (0.6, 0.6, 0.2),
+      );
     });
   });
 

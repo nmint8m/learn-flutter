@@ -87,4 +87,19 @@ void main() {
     final window = withWindow.elements.single as WindowElement;
     expect((window.x, window.width, window.angle), (5.0, 3.0, 0.0));
   });
+
+  test('a new bar is sized by the plan\'s bar slot', () {
+    final slotted = FloorPlan.parse('''
+      {"id": "p", "width": 20, "height": 10,
+       "barSlot": {"width": 0.6, "depth": 0.5}}
+    ''');
+    final bar = addPaletteItem(
+      slotted,
+      PaletteItem.barTable,
+      const Offset(10, 5),
+    ).plan.tables.last;
+    // 4 seats × 0.6 m = 2.4 m; 0.5 m per floor unit.
+    expect(bar.width, closeTo(4.8, 1e-9));
+    expect(bar.height, closeTo(1.0, 1e-9));
+  });
 }

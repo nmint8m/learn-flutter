@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 
-import 'floor_edits.dart' show SeatSide, maxBarSeats;
+import 'floor_edits.dart'
+    show
+        SeatSide,
+        maxBarSeats,
+        maxSeatsPerEnd,
+        maxSeatsPerLongSide,
+        minSeatsPerEnd,
+        minSeatsPerLongSide;
 
 /// The right side bar for editing the selected item's name.
 ///
@@ -24,6 +31,8 @@ class EditSidebar extends StatefulWidget {
     this.seatsPerSide,
     this.squareTable = false,
     this.onSeatSideChanged,
+    this.rectangleSeats,
+    this.onRectangleSeatsChanged,
     this.rotation,
     this.onRotationChanged,
     this.barSeats,
@@ -61,6 +70,11 @@ class EditSidebar extends StatefulWidget {
   final bool squareTable;
   final void Function(SeatSide side, {required bool included})?
   onSeatSideChanged;
+
+  /// A rectangle table's seats on each long side and at each end. Null hides
+  /// the seat counts (squares and other items).
+  final ({int long, int ends})? rectangleSeats;
+  final void Function({int? long, int? ends})? onRectangleSeatsChanged;
 
   /// The table's rotation, in degrees. Null hides the rotation slider.
   final double? rotation;
@@ -129,9 +143,19 @@ class _EditSidebarState extends State<EditSidebar> {
             _SeatSidePicker(
               seatsPerSide: seats,
               square: widget.squareTable,
+              rectangleSeats: widget.rectangleSeats,
               onChanged: (side, {required included}) =>
                   widget.onSeatSideChanged?.call(side, included: included),
             ),
+            if (widget.rectangleSeats case final counts?) ...[
+              const SizedBox(height: 16),
+              _RectangleSeatFields(
+                widthSide: counts.ends,
+                lengthSide: counts.long,
+                onChanged: (width, length) => widget.onRectangleSeatsChanged
+                    ?.call(ends: width, long: length),
+              ),
+            ],
           ],
           if (widget.barSeats case final seats?) ...[
             const SizedBox(height: 24),
@@ -358,10 +382,14 @@ class _SeatSidePicker extends StatelessWidget {
     required this.seatsPerSide,
     required this.square,
     required this.onChanged,
+    this.rectangleSeats,
   });
 
   final Map<SeatSide, int> seatsPerSide;
   final bool square;
+
+  /// A rectangle's seats per long side and end, shown on excluded sides.
+  final ({int long, int ends})? rectangleSeats;
   final void Function(SeatSide side, {required bool included}) onChanged;
 
   static const _seat = 24.0;
@@ -371,12 +399,13 @@ class _SeatSidePicker extends StatelessWidget {
   int _shownOn(SeatSide side) {
     final count = seatsPerSide[side] ?? 0;
     if (count > 0) return count;
-    return square
-        ? 1
-        : switch (side) {
-            SeatSide.top || SeatSide.bottom => 2,
-            SeatSide.left || SeatSide.right => 1,
-          };
+    final long = side == SeatSide.top || side == SeatSide.bottom;
+    if (square) return 1;
+    if (rectangleSeats case final r?) {
+      final n = long ? r.long : r.ends;
+      if (n > 0) return n;
+    }
+    return long ? 2 : 1;
   }
 
   @override
@@ -682,6 +711,118 @@ class _SeatCountFieldState extends State<_SeatCountField> {
             icon: const Icon(Icons.add),
             onPressed: widget.seats < maxBarSeats ? () => _step(1) : null,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A rectangle table's seats on its width side (each end) and its length
+/// side (each long side), as two number fields. Each has its range, and the
+/// length side must have more seats than the width side; [onChanged] is only
+/// called with a valid pair.
+class _RectangleSeatFields extends StatefulWidget {
+  const _RectangleSeatFields({
+    required this.widthSide,
+    required this.lengthSide,
+    required this.onChanged,
+  });
+
+  final int widthSide;
+  final int lengthSide;
+  final void Function(int widthSide, int lengthSide) onChanged;
+
+  @override
+  State<_RectangleSeatFields> createState() => _RectangleSeatFieldsState();
+}
+
+class _RectangleSeatFieldsState extends State<_RectangleSeatFields> {
+  late final _width = TextEditingController(text: '${widget.widthSide}');
+  late final _length = TextEditingController(text: '${widget.lengthSide}');
+  String? _widthError;
+  String? _lengthError;
+
+  @override
+  void didUpdateWidget(_RectangleSeatFields old) {
+    super.didUpdateWidget(old);
+    // Follow changes from elsewhere (e.g. switching a side on), unless the
+    // field already shows that number.
+    if (int.tryParse(_width.text) != widget.widthSide &&
+        widget.widthSide != old.widthSide) {
+      _width.text = '${widget.widthSide}';
+    }
+    if (int.tryParse(_length.text) != widget.lengthSide &&
+        widget.lengthSide != old.lengthSide) {
+      _length.text = '${widget.lengthSide}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _width.dispose();
+    _length.dispose();
+    super.dispose();
+  }
+
+  void _typed(String _) {
+    final width = int.tryParse(_width.text.trim());
+    final length = int.tryParse(_length.text.trim());
+    final widthOk =
+        width != null && width >= minSeatsPerEnd && width <= maxSeatsPerEnd;
+    final lengthOk =
+        length != null &&
+        length >= minSeatsPerLongSide &&
+        length <= maxSeatsPerLongSide;
+    setState(() {
+      _widthError = widthOk
+          ? null
+          : 'Enter $minSeatsPerEnd to $maxSeatsPerEnd seats';
+      _lengthError = !lengthOk
+          ? 'Enter $minSeatsPerLongSide to $maxSeatsPerLongSide seats'
+          : widthOk && length <= width
+          ? 'Must be more than the width side ($width)'
+          : null;
+    });
+    if (widthOk && lengthOk && length > width) {
+      widget.onChanged(width, length);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    InputDecoration decoration(String label, String helper, String? error) =>
+        InputDecoration(
+          labelText: label,
+          helperText: helper,
+          errorText: error,
+          errorMaxLines: 2,
+          border: const OutlineInputBorder(),
+        );
+    return Column(
+      children: [
+        TextField(
+          key: const ValueKey('rect-width-seats'),
+          controller: _width,
+          keyboardType: TextInputType.number,
+          decoration: decoration(
+            'Seats on width side',
+            '$minSeatsPerEnd to $maxSeatsPerEnd, at each end',
+            _widthError,
+          ),
+          onChanged: _typed,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('rect-length-seats'),
+          controller: _length,
+          keyboardType: TextInputType.number,
+          decoration: decoration(
+            'Seats on length side',
+            '$minSeatsPerLongSide to $maxSeatsPerLongSide, along each long '
+                'side; more than the width side',
+            _lengthError,
+          ),
+          onChanged: _typed,
         ),
       ],
     );

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'editor/table_settings_dialog.dart';
 import 'editor/design_panel.dart';
 import 'editor/design_step.dart';
 import 'editor/edit_sidebar.dart';
@@ -195,6 +196,164 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   /// Removes the selected item, closes the side bar, and offers Undo.
+  /// The table types' settings, for the panel's Table configuration.
+  List<({String key, String title, String summary, VoidCallback onTap})>
+  _tableSettings(FloorPlan plan, {VoidCallback? before}) {
+    String m(double meters) => formatMeters(meters);
+    VoidCallback open(Future<void> Function() edit) => () {
+      before?.call();
+      edit();
+    };
+    return [
+      (
+        key: 'rectangle',
+        title: 'Rectangle',
+        summary:
+            'Seat ${m(plan.rectSeatWidth)} wide × '
+            '${m(plan.rectSeatDepth)} deep · buffer ${m(plan.rectBuffer)}',
+        onTap: open(() => _editRectangleSettings(plan)),
+      ),
+      (
+        key: 'square',
+        title: 'Square',
+        summary: 'Side ${m(plan.squareSeatWidth)}',
+        onTap: open(() => _editSquareSettings(plan)),
+      ),
+      (
+        key: 'bar',
+        title: 'Bar',
+        summary:
+            'Per seat: ${m(plan.barSlotWidth)} wide × '
+            '${m(plan.barSlotDepth)} deep',
+        onTap: open(() => _editBarSlot(plan)),
+      ),
+    ];
+  }
+
+  /// Applies new table settings with [apply] and says how many tables of
+  /// the type ([counts]) were resized.
+  void _applySettings(
+    FloorPlan plan,
+    String what,
+    FloorPlan Function(FloorPlan) apply,
+    bool Function(FloorTable) counts,
+  ) {
+    final changed = apply(_edited ?? plan);
+    _change(changed);
+    final n = changed.tables.where(counts).length;
+    _showMessage(
+      '$what settings applied'
+      '${n == 0 ? '' : ' · $n table${n == 1 ? '' : 's'} resized'}',
+    );
+  }
+
+  Future<void> _editBarSlot(FloorPlan plan) async {
+    final values = await showTableSettingsDialog(
+      context,
+      title: 'Bar',
+      description:
+          'The space for one seat. Every bar uses it: a bar with 5 seats is '
+          '5 × the width long and the depth deep.',
+      keyPrefix: 'bar-slot',
+      settings: [
+        (
+          key: 'width',
+          label: 'Width per seat',
+          value: plan.barSlotWidth,
+          range: FloorPlan.barSlotWidthRange,
+        ),
+        (
+          key: 'depth',
+          label: 'Depth',
+          value: plan.barSlotDepth,
+          range: FloorPlan.barSlotDepthRange,
+        ),
+      ],
+    );
+    if (values == null || !mounted) return;
+    _applySettings(
+      plan,
+      'Bar',
+      (p) => setBarSlot(
+        p,
+        widthMeters: values['width']!,
+        depthMeters: values['depth']!,
+      ),
+      (t) => t.bar,
+    );
+  }
+
+  Future<void> _editSquareSettings(FloorPlan plan) async {
+    final values = await showTableSettingsDialog(
+      context,
+      title: 'Square',
+      description:
+          'Every square table is this wide on each side, with at most one '
+          'seat per side.',
+      keyPrefix: 'square',
+      settings: [
+        (
+          key: 'width',
+          label: 'Width',
+          value: plan.squareSeatWidth,
+          range: FloorPlan.squareSeatWidthRange,
+        ),
+      ],
+    );
+    if (values == null || !mounted) return;
+    _applySettings(
+      plan,
+      'Square',
+      (p) => setSquareSettings(p, widthMeters: values['width']!),
+      (t) => t.square && !t.bar,
+    );
+  }
+
+  Future<void> _editRectangleSettings(FloorPlan plan) async {
+    final values = await showTableSettingsDialog(
+      context,
+      title: 'Rectangle',
+      description:
+          'Sizes every rectangle table from its seats (up to 2 at each end, '
+          '4 along each long side):\n'
+          'width = max(seats per end × width, 2 × depth) + 2 × buffer\n'
+          'length = seats per long side × depth + 2 × buffer',
+      keyPrefix: 'rectangle',
+      settings: [
+        (
+          key: 'width',
+          label: 'Width',
+          value: plan.rectSeatWidth,
+          range: FloorPlan.rectSeatWidthRange,
+        ),
+        (
+          key: 'depth',
+          label: 'Depth',
+          value: plan.rectSeatDepth,
+          range: FloorPlan.rectSeatDepthRange,
+        ),
+        (
+          key: 'buffer',
+          label: 'Buffer',
+          value: plan.rectBuffer,
+          range: FloorPlan.rectBufferRange,
+        ),
+      ],
+    );
+    if (values == null || !mounted) return;
+    _applySettings(
+      plan,
+      'Rectangle',
+      (p) => setRectangleSettings(
+        p,
+        widthMeters: values['width']!,
+        depthMeters: values['depth']!,
+        bufferMeters: values['buffer']!,
+      ),
+      (t) => t.shape.shape == TableShape.roundedRect && !t.bar && !t.square,
+    );
+  }
+
   void _duplicateSelected(FloorPlan plan, FloorItemRef ref) {
     var (duplicated, copy) = duplicateItem(plan, ref)!;
     // A copied table stays inside the room too.
@@ -273,6 +432,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   child: Builder(
                     builder: (drawerContext) => DesignPanel(
                       section: section,
+                      settings: _tableSettings(
+                        plan,
+                        before: () => Navigator.pop(drawerContext),
+                      ),
                       onItemTapped: (item) {
                         Navigator.pop(drawerContext);
                         _addItem(plan, item);
@@ -305,6 +468,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
             width: 240,
             child: DesignPanel(
               section: section,
+              settings: _tableSettings(plan),
               onItemTapped: (item) => _addItem(plan, item),
             ),
           ),
@@ -416,9 +580,13 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                       _draggedEnd = null;
                       _openingDragPoint = null;
                     },
-                    // Step 1 is about the room: tables are hidden. The
-                    // rulers show in every step.
-                    showTables: _step != DesignStep.roomAndDecor,
+                    // Each step fades the other step's items to 30%
+                    // opacity (its own stay at 100%; Review shows all at
+                    // 100%): tables in step 1, the room's walls, doors,
+                    // windows and fixtures in step 2. The rulers show in
+                    // every step.
+                    dimTables: _step == DesignStep.roomAndDecor,
+                    dimRoom: _step == DesignStep.tableAndSeat,
                     showRulers: true,
                     controller: _view,
                   ),
@@ -500,6 +668,26 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                 final table? => isSquareTable(table),
                 null => false,
               },
+              rectangleSeats: switch (sidedTable(plan, selected)) {
+                // A switched-off pair of sides shows the fewest seats it
+                // could have.
+                final table? when !isSquareTable(table) => (
+                  long: math.max(
+                    rectangleSeats(table).long,
+                    minSeatsPerLongSide,
+                  ),
+                  ends: math.max(rectangleSeats(table).ends, minSeatsPerEnd),
+                ),
+                _ => null,
+              },
+              onRectangleSeatsChanged: ({long, ends}) => _change(
+                setRectangleSeats(
+                  _edited ?? plan,
+                  selected,
+                  long: long,
+                  ends: ends,
+                ),
+              ),
               onSeatSideChanged: (side, {required included}) => _change(
                 setSeatSide(
                   _edited ?? plan,
@@ -508,8 +696,8 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   included: included,
                 ),
               ),
-              rotation: (sidedTable(plan, selected) ?? barTable(plan, selected))
-                  ?.rotation,
+              // Rounded tables, bars and fixtures can be turned.
+              rotation: itemRotation(plan, selected),
               // Bars: the number of seats. A longer bar is nudged back
               // inside the room if it would poke through a wall.
               barSeats: barTable(plan, selected)?.seats.length,
@@ -526,7 +714,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                 );
               },
               onRotationChanged: (degrees) =>
-                  _change(rotateTable(_edited ?? plan, selected, degrees)),
+                  _change(rotateItem(_edited ?? plan, selected, degrees)),
               onLengthChanged: (meters) =>
                   _change(resizeItem(_edited ?? plan, selected, meters)),
               // Fixtures: width and height (or a diameter for plants), up

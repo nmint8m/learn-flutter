@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drawing/floor_plan/editor/floor_edits.dart'
-    show tableInsideRoom;
+    show rectangleSeats, tableInsideRoom;
 import 'package:drawing/floor_plan/editor/palette.dart';
 import 'package:drawing/floor_plan/floor_plan.dart';
 import 'package:drawing/floor_plan/floor_plan_page.dart';
@@ -60,6 +60,14 @@ void main() {
   Offset floorPoint(WidgetTester tester, Offset units) {
     final floor = tester.getRect(find.byType(DragTarget<PaletteItem>));
     return floor.topLeft + units * (floor.width / plan.width);
+  }
+
+  // Tall enough for the whole Edit panel (seats, counts and rotation).
+  Future<void> openTall(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await openPage(tester);
   }
 
   Finder palette(String item) => find.byKey(ValueKey('palette-$item'));
@@ -135,30 +143,48 @@ void main() {
     expectNothingSelected(tester);
   });
 
-  testWidgets('step 1 hides tables; rulers show in every step', (tester) async {
+  testWidgets('each step fades the other step\'s items; rulers in every '
+      'step', (tester) async {
     final topRuler = find.byKey(const ValueKey('ruler-top'));
     final leftRuler = find.byKey(const ValueKey('ruler-left'));
+    final t1 = find.byKey(const ValueKey('table-T1'));
+    final kitchen = find.text('Kitchen');
+    // The fade is inside a table's widget, and around a fixture's label.
+    double opacityOf(Finder f) {
+      final inside = find.descendant(of: f, matching: find.byType(Opacity));
+      final around = find.ancestor(of: f, matching: find.byType(Opacity));
+      return tester
+          .widget<Opacity>(
+            inside.evaluate().isNotEmpty ? inside.first : around.first,
+          )
+          .opacity;
+    }
+
     await openPage(tester);
 
-    expect(find.byKey(const ValueKey('table-T1')), findsNothing);
+    // Step 1: tables at 30%, the room at 100%.
+    expect(t1, findsOneWidget);
+    expect(opacityOf(t1), 0.3);
+    expect(opacityOf(kitchen), 1);
     expect(topRuler, findsOneWidget);
     expect(leftRuler, findsOneWidget);
-    // Room items are still drawn.
-    expect(find.text('Kitchen'), findsOneWidget);
 
-    // Tapping where table 1 is selects nothing.
-    final t1 = plan.tableById('T1')!;
-    await tester.tapAt(floorPoint(tester, Offset(t1.x, t1.y)));
+    // Tapping table 1 still selects nothing in step 1.
+    final table = plan.tableById('T1')!;
+    await tester.tapAt(floorPoint(tester, Offset(table.x, table.y)));
     await settle(tester);
     expectNothingSelected(tester);
 
+    // Step 2: the room's items at 30%, the tables at 100%.
     await goToStep(tester, 'tableAndSeat');
-    expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
+    expect(opacityOf(t1), 1);
+    expect(opacityOf(kitchen), 0.3);
     expect(topRuler, findsOneWidget);
-    expect(leftRuler, findsOneWidget);
 
+    // Review: everything at 100%.
     await goToStep(tester, 'review');
-    expect(find.byKey(const ValueKey('table-T1')), findsOneWidget);
+    expect(opacityOf(t1), 1);
+    expect(opacityOf(kitchen), 1);
     expect(topRuler, findsOneWidget);
     expect(leftRuler, findsOneWidget);
   });
@@ -862,6 +888,39 @@ void main() {
     expect((kitchen.x, kitchen.y), (35, 5)); // Same center.
   });
 
+  testWidgets('Edit turns a fixture', (tester) async {
+    await openPage(tester);
+    // The kitchen, at (35, 5).
+    await tester.tapAt(floorPoint(tester, const Offset(35, 5)));
+    await settle(tester);
+    final slider = find.byKey(const ValueKey('item-rotation'));
+    expect(slider, findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('item-rotation-value')))
+          .data,
+      '0°',
+    );
+
+    tester.widget<Slider>(slider).onChanged!(45);
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await settle(tester);
+    final kitchen = repository.saved!.elements
+        .whereType<FixtureElement>()
+        .firstWhere((f) => f.label == 'Kitchen');
+    expect(kitchen.rotation, 45);
+    expect((kitchen.x, kitchen.y), (35, 5)); // Turned around its center.
+  });
+
+  testWidgets('doors have no rotation slider', (tester) async {
+    await openPage(tester);
+    await tester.tapAt(floorPoint(tester, const Offset(20, 23.9)));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('item-name')), findsOneWidget);
+    expect(find.byKey(const ValueKey('item-rotation')), findsNothing);
+  });
+
   testWidgets('Edit sets a plant\'s diameter', (tester) async {
     final diameter = find.byKey(const ValueKey('item-diameter'));
     await openPage(tester);
@@ -988,7 +1047,7 @@ void main() {
     testWidgets('adding one opens the Edit panel with seats and rotation', (
       tester,
     ) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(palette('roundedRectTable'));
       await settle(tester);
@@ -1019,7 +1078,7 @@ void main() {
     });
 
     testWidgets('tapping a side removes or adds its seats', (tester) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(palette('roundedRectTable'));
       await settle(tester);
@@ -1057,7 +1116,7 @@ void main() {
     });
 
     testWidgets('the slider turns the table', (tester) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(palette('roundedRectTable'));
       await settle(tester);
@@ -1078,7 +1137,7 @@ void main() {
     });
 
     testWidgets('the rounded square has one seat per side', (tester) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       expect(palette('roundedSquareTable'), findsOneWidget);
       await tester.tap(palette('roundedSquareTable'));
@@ -1094,14 +1153,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('save')));
       await settle(tester);
       final table = repository.saved!.tableById('T8')!;
-      expect((table.width, table.height), (3, 3));
+      // 0.8 m a side by default, 0.5 m per floor unit.
+      expect((table.width, table.height), (1.6, 1.6));
+      expect(table.square, isTrue);
       expect(table.seats, hasLength(4));
     });
 
     testWidgets('other tables have no seat picture or rotation', (
       tester,
     ) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(palette('circleTable'));
       await settle(tester);
@@ -1170,7 +1231,7 @@ void main() {
     testWidgets('dragging a table against a wall stops it there', (
       tester,
     ) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(find.byKey(const ValueKey('table-T6')));
       await settle(tester);
@@ -1188,7 +1249,7 @@ void main() {
     testWidgets('it slides along the wall when dragged at an angle', (
       tester,
     ) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       await tester.tap(find.byKey(const ValueKey('table-T6')));
       await settle(tester);
@@ -1205,7 +1266,7 @@ void main() {
     testWidgets('a table dropped outside the room lands inside', (
       tester,
     ) async {
-      await openPage(tester);
+      await openTall(tester);
       await goToStep(tester, 'tableAndSeat');
       // Drop a circle table in the L's cut-out, outside the walls.
       final gesture = await tester.startGesture(
@@ -1266,6 +1327,163 @@ void main() {
     final moved = repository.saved!.tableById('T1')!;
     expect(moved.x, closeTo(23, 0.11));
     expect(moved.y, closeTo(12, 0.11));
+  });
+
+  testWidgets('Table configuration › Bar sets the slot for every bar', (
+    tester,
+  ) async {
+    // Tall enough for the panel's Table configuration section.
+    tester.view.physicalSize = const Size(1200, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await openPage(tester);
+    // Not in step 1.
+    expect(find.byKey(const ValueKey('config-bar')), findsNothing);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(palette('barTable')); // A 4-seat bar.
+    await settle(tester);
+
+    final config = find.byKey(const ValueKey('config-bar'));
+    expect(config, findsOneWidget);
+    await tester.tap(config);
+    await settle(tester);
+
+    await tester.enterText(find.byKey(const ValueKey('bar-slot-width')), '0.6');
+    await tester.enterText(find.byKey(const ValueKey('bar-slot-depth')), '0.3');
+    await tester.tap(find.byKey(const ValueKey('bar-slot-save')));
+    await settle(tester);
+    expect(find.text('Enter 0.4 to 0.6 m'), findsOneWidget); // Too shallow.
+    await tester.enterText(find.byKey(const ValueKey('bar-slot-depth')), '0.5');
+    await tester.tap(find.byKey(const ValueKey('bar-slot-save')));
+    await settle(tester);
+    expect(find.text('Per seat: 0.6 m wide × 0.5 m deep'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await settle(tester);
+    final saved = repository.saved!;
+    final bar = saved.tables.lastWhere((t) => t.bar);
+    expect(bar.width * saved.metersPerUnit, closeTo(2.4, 1e-9));
+    expect(bar.height * saved.metersPerUnit, closeTo(0.5, 1e-9));
+    expect((saved.barSlotWidth, saved.barSlotDepth), (0.6, 0.5));
+  });
+
+  testWidgets('panel: Rectangle and Square names, three table settings', (
+    tester,
+  ) async {
+    await openTall(tester);
+    await goToStep(tester, 'tableAndSeat');
+    expect(find.text('Rectangle'), findsWidgets);
+    expect(find.text('Square'), findsWidgets);
+    expect(find.text('Rounded rectangle'), findsNothing);
+    expect(find.text('Rounded square'), findsNothing);
+    for (final key in ['rectangle', 'square', 'bar']) {
+      expect(find.byKey(ValueKey('config-$key')), findsOneWidget);
+    }
+  });
+
+  testWidgets('Table configuration › Rectangle resizes rectangle tables', (
+    tester,
+  ) async {
+    await openTall(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(palette('roundedRectTable')); // 2 + 2, 1 + 1 seats.
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('config-rectangle')));
+    await settle(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('rectangle-width')),
+      '1.2',
+    );
+    await tester.tap(find.byKey(const ValueKey('rectangle-save')));
+    await settle(tester);
+    expect(find.text('Enter 0.6 to 1 m'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('rectangle-width')), '1');
+    await tester.enterText(
+      find.byKey(const ValueKey('rectangle-depth')),
+      '0.6',
+    );
+    await tester.enterText(find.byKey(const ValueKey('rectangle-buffer')), '0');
+    await tester.tap(find.byKey(const ValueKey('rectangle-save')));
+    await settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await settle(tester);
+    final saved = repository.saved!;
+    final t8 = saved.tableById('T8')!;
+    // Length: 2 × 0.6 = 1.2 m; width: max(1 × 1, 2 × 0.6) = 1.2 m.
+    expect(t8.width * saved.metersPerUnit, closeTo(1.2, 1e-9));
+    expect(t8.height * saved.metersPerUnit, closeTo(1.2, 1e-9));
+    expect(t8.square, isFalse); // Still a rectangle, though it's square now.
+  });
+
+  testWidgets('rectangle Edit panel: seats on the width and length side', (
+    tester,
+  ) async {
+    await openTall(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(palette('roundedRectTable'));
+    await settle(tester);
+    final width = find.byKey(const ValueKey('rect-width-seats'));
+    final length = find.byKey(const ValueKey('rect-length-seats'));
+    String text(Finder f) => tester.widget<TextField>(f).controller!.text;
+    expect((text(width), text(length)), ('1', '2'));
+    // Between the seat picture and the rotation slider.
+    final picture = tester.getRect(find.byKey(const ValueKey('seat-side-top')));
+    final rotation = tester.getRect(
+      find.byKey(const ValueKey('item-rotation')),
+    );
+    expect(tester.getRect(width).top, greaterThan(picture.bottom));
+    expect(tester.getRect(length).bottom, lessThan(rotation.top));
+
+    // Out of range.
+    await tester.enterText(length, '5');
+    await settle(tester);
+    expect(find.text('Enter 2 to 4 seats'), findsOneWidget);
+    await tester.enterText(length, '2');
+    await tester.enterText(width, '3');
+    await settle(tester);
+    expect(find.text('Enter 1 to 2 seats'), findsOneWidget);
+
+    // Length must be more than width.
+    await tester.enterText(width, '2');
+    await settle(tester);
+    expect(find.text('Must be more than the width side (2)'), findsOneWidget);
+
+    await tester.enterText(length, '4');
+    await settle(tester);
+    expect(find.textContaining('Must be more'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await settle(tester);
+    final t8 = repository.saved!.tableById('T8')!;
+    expect(rectangleSeats(t8), (long: 4, ends: 2));
+    expect(t8.seats, hasLength(12));
+    // Default settings: length 4 × 0.5 + 0.2 = 2.2 m;
+    // width max(2 × 0.8, 2 × 0.5) + 0.2 = 1.8 m.
+    expect(t8.width * repository.saved!.metersPerUnit, closeTo(2.2, 1e-9));
+    expect(t8.height * repository.saved!.metersPerUnit, closeTo(1.8, 1e-9));
+  });
+
+  testWidgets('squares have no seat counts; Square settings resize them', (
+    tester,
+  ) async {
+    await openTall(tester);
+    await goToStep(tester, 'tableAndSeat');
+    await tester.tap(palette('roundedSquareTable'));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('rect-length-seats')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('config-square')));
+    await settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('square-width')), '1');
+    await tester.tap(find.byKey(const ValueKey('square-save')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('save')));
+    await settle(tester);
+    final t8 = repository.saved!.tableById('T8')!;
+    expect(t8.width * repository.saved!.metersPerUnit, closeTo(1, 1e-9));
+    expect(t8.height, t8.width);
   });
 
   group('bar', () {
@@ -1343,7 +1561,8 @@ void main() {
       expect(bar.bar, isTrue);
       expect(bar.seats, hasLength(9));
       expect(bar.seatLayout.bottom, 9); // All on one side.
-      expect(bar.width, 18); // 1 m of counter per seat.
+      // 0.6 m of counter per seat (the default), 0.5 m per floor unit.
+      expect(bar.width, closeTo(10.8, 1e-9));
       expect(bar.statusPerSeat, isTrue);
     });
 

@@ -28,7 +28,33 @@ class FloorPlan {
     this.outline,
     this.elements = const [],
     this.tables = const [],
+    this.barSlotWidth = defaultBarSlotWidth,
+    this.barSlotDepth = defaultBarSlotDepth,
+    this.squareSeatWidth = defaultSquareSeatWidth,
+    this.rectSeatWidth = defaultRectSeatWidth,
+    this.rectSeatDepth = defaultRectSeatDepth,
+    this.rectBuffer = defaultRectBuffer,
   });
+
+  /// A bar slot's default width and depth, in meters, and the range they're
+  /// kept in.
+  static const defaultBarSlotWidth = 0.6;
+  static const defaultBarSlotDepth = 0.6;
+  static const barSlotWidthRange = (0.6, 0.8);
+  static const barSlotDepthRange = (0.4, 0.6);
+
+  /// A square table's side, in meters: its default and range.
+  static const defaultSquareSeatWidth = 0.8;
+  static const squareSeatWidthRange = (0.6, 1.0);
+
+  /// A rectangle table's seat width, seat depth and buffer, in meters: their
+  /// defaults and ranges. See [rectSeatWidth].
+  static const defaultRectSeatWidth = 0.8;
+  static const defaultRectSeatDepth = 0.5;
+  static const defaultRectBuffer = 0.1;
+  static const rectSeatWidthRange = (0.6, 1.0);
+  static const rectSeatDepthRange = (0.4, 0.6);
+  static const rectBufferRange = (0.0, 0.3);
 
   final String id;
   final String name;
@@ -55,6 +81,28 @@ class FloorPlan {
 
   final List<FloorElement> elements;
   final List<FloorTable> tables;
+
+  /// The space for one seat at every bar ([FloorTable.bar]), in meters: how
+  /// much counter it gets ([barSlotWidth]) and how deep the counter is
+  /// ([barSlotDepth]). A bar with 5 seats and 0.6 m slots is 3 m long.
+  final double barSlotWidth;
+  final double barSlotDepth;
+
+  /// The side of every square table ([FloorTable.square]), in meters.
+  final double squareSeatWidth;
+
+  /// Sizes every rectangle table (a rounded rectangle that isn't a bar or a
+  /// square), in meters:
+  ///
+  ///   width  = max(seats per end × [rectSeatWidth], 2 × [rectSeatDepth])
+  ///            + 2 × [rectBuffer]
+  ///   length = seats per long side × [rectSeatDepth] + 2 × [rectBuffer]
+  ///
+  /// The width is across the ends (up to 2 seats each), the length along the
+  /// long sides (up to 4 seats each).
+  final double rectSeatWidth;
+  final double rectSeatDepth;
+  final double rectBuffer;
 
   /// Reads a plan from a JSON string. Throws a [FormatException] that names
   /// the bad field if the JSON doesn't match the expected format.
@@ -85,6 +133,48 @@ class FloorPlan {
       tables: [
         for (final t in json.objectList('tables')) FloorTable._fromJson(t),
       ],
+      barSlotWidth: _setting(
+        json,
+        'barSlot',
+        'width',
+        defaultBarSlotWidth,
+        barSlotWidthRange,
+      ),
+      barSlotDepth: _setting(
+        json,
+        'barSlot',
+        'depth',
+        defaultBarSlotDepth,
+        barSlotDepthRange,
+      ),
+      squareSeatWidth: _setting(
+        json,
+        'squareTable',
+        'width',
+        defaultSquareSeatWidth,
+        squareSeatWidthRange,
+      ),
+      rectSeatWidth: _setting(
+        json,
+        'rectangleTable',
+        'width',
+        defaultRectSeatWidth,
+        rectSeatWidthRange,
+      ),
+      rectSeatDepth: _setting(
+        json,
+        'rectangleTable',
+        'depth',
+        defaultRectSeatDepth,
+        rectSeatDepthRange,
+      ),
+      rectBuffer: _setting(
+        json,
+        'rectangleTable',
+        'buffer',
+        defaultRectBuffer,
+        rectBufferRange,
+      ),
     );
 
     final ids = <String>{};
@@ -96,11 +186,30 @@ class FloorPlan {
     return plan;
   }
 
+  /// A table setting in meters, e.g. `"barSlot": {"width": 0.6}`: the
+  /// [fallback] if missing, kept within [range].
+  static double _setting(
+    _Json json,
+    String group,
+    String key,
+    double fallback,
+    (double, double) range,
+  ) {
+    final value = json.optionalObject(group)?.number(key, fallback: fallback);
+    return (value ?? fallback).clamp(range.$1, range.$2).toDouble();
+  }
+
   /// A copy with some parts replaced, e.g. after adding a table.
   FloorPlan copyWith({
     List<Offset>? outline,
     List<FloorElement>? elements,
     List<FloorTable>? tables,
+    double? barSlotWidth,
+    double? barSlotDepth,
+    double? squareSeatWidth,
+    double? rectSeatWidth,
+    double? rectSeatDepth,
+    double? rectBuffer,
   }) => FloorPlan(
     id: id,
     name: name,
@@ -111,6 +220,12 @@ class FloorPlan {
     outline: outline ?? this.outline,
     elements: elements ?? this.elements,
     tables: tables ?? this.tables,
+    barSlotWidth: barSlotWidth ?? this.barSlotWidth,
+    barSlotDepth: barSlotDepth ?? this.barSlotDepth,
+    squareSeatWidth: squareSeatWidth ?? this.squareSeatWidth,
+    rectSeatWidth: rectSeatWidth ?? this.rectSeatWidth,
+    rectSeatDepth: rectSeatDepth ?? this.rectSeatDepth,
+    rectBuffer: rectBuffer ?? this.rectBuffer,
   );
 
   /// The plan as JSON, in the same format [parse] reads.
@@ -124,6 +239,19 @@ class FloorPlan {
     if (outline case final points?) 'outline': _points(points),
     'elements': [for (final e in elements) e.toJson()],
     'tables': [for (final t in tables) t.toJson()],
+    if (barSlotWidth != defaultBarSlotWidth ||
+        barSlotDepth != defaultBarSlotDepth)
+      'barSlot': {'width': _num(barSlotWidth), 'depth': _num(barSlotDepth)},
+    if (squareSeatWidth != defaultSquareSeatWidth)
+      'squareTable': {'width': _num(squareSeatWidth)},
+    if (rectSeatWidth != defaultRectSeatWidth ||
+        rectSeatDepth != defaultRectSeatDepth ||
+        rectBuffer != defaultRectBuffer)
+      'rectangleTable': {
+        'width': _num(rectSeatWidth),
+        'depth': _num(rectSeatDepth),
+        'buffer': _num(rectBuffer),
+      },
   };
 
   /// [toJson] as text, indented for people to read. Lists of numbers (points)
@@ -455,6 +583,7 @@ class FixtureElement extends FloorElement {
     double? y,
     double? width,
     double? height,
+    double? rotation,
     String? label,
   }) => FixtureElement(
     shape: shape,
@@ -462,7 +591,7 @@ class FixtureElement extends FloorElement {
     y: y ?? this.y,
     width: width ?? this.width,
     height: height ?? this.height,
-    rotation: rotation,
+    rotation: rotation ?? this.rotation,
     label: label ?? this.label,
     color: color,
   );
@@ -498,6 +627,7 @@ class FloorTable {
     this.seatLayout = const SeatLayout(),
     this.statusPerSeat = false,
     this.bar = false,
+    this.square = false,
   });
 
   factory FloorTable._fromJson(_Json json) {
@@ -515,6 +645,14 @@ class FloorTable {
       seatLayout: SeatLayout._fromJson(inTable.optionalObject('seats')),
       statusPerSeat: inTable.boolean('statusPerSeat', fallback: false),
       bar: inTable.boolean('bar', fallback: false),
+      // Older plans don't say: a rounded table with equal sides is square.
+      square: inTable.boolean(
+        'square',
+        fallback:
+            !inTable.boolean('bar', fallback: false) &&
+            ShapeSpec._fromJson(inTable).shape == TableShape.roundedRect &&
+            inTable.positiveNumber('width') == inTable.positiveNumber('height'),
+      ),
     );
   }
 
@@ -543,6 +681,9 @@ class FloorTable {
   /// side (the bottom, before rotation), one stretch of counter per seat.
   final bool bar;
 
+  /// A square table: a rounded square with at most one seat per side.
+  final bool square;
+
   /// Every seat, positioned relative to the table's center, before rotation.
   List<Seat> get seats => seatLayout.seatsFor(this);
 
@@ -552,6 +693,7 @@ class FloorTable {
     double? y,
     String? label,
     double? width,
+    double? height,
     double? rotation,
     SeatLayout? seatLayout,
   }) => FloorTable(
@@ -561,11 +703,12 @@ class FloorTable {
     x: x ?? this.x,
     y: y ?? this.y,
     width: width ?? this.width,
-    height: height,
+    height: height ?? this.height,
     rotation: rotation ?? this.rotation,
     seatLayout: seatLayout ?? this.seatLayout,
     statusPerSeat: statusPerSeat,
     bar: bar,
+    square: square,
   );
 
   Map<String, Object?> toJson() => {
@@ -580,6 +723,7 @@ class FloorTable {
     'seats': seatLayout.toJson(),
     if (statusPerSeat) 'statusPerSeat': true,
     if (bar) 'bar': true,
+    if (square) 'square': true,
   };
 }
 

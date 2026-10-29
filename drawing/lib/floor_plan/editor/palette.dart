@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import '../../geometry/geometry_paths.dart';
 import '../floor_plan.dart';
+import 'floor_edits.dart' show sizeTable;
 
 /// The groups shown in the design panel.
 enum PaletteSection {
@@ -21,8 +22,8 @@ enum PaletteItem {
   window('Window', PaletteSection.roomAndDecor),
   plant('Plant', PaletteSection.roomAndDecor),
   fixture('Fixture', PaletteSection.roomAndDecor),
-  roundedRectTable('Rounded rectangle', PaletteSection.tableAndSeat),
-  roundedSquareTable('Rounded square', PaletteSection.tableAndSeat),
+  roundedRectTable('Rectangle', PaletteSection.tableAndSeat),
+  roundedSquareTable('Square', PaletteSection.tableAndSeat),
   circleTable('Circle', PaletteSection.tableAndSeat),
   semicircleTable('Semicircle', PaletteSection.tableAndSeat),
   quarterCircleTable('Quarter circle', PaletteSection.tableAndSeat),
@@ -129,8 +130,9 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
         shape: const ShapeSpec.roundedRect(),
         x: x,
         y: y,
-        width: seats * 2,
-        height: 2,
+        // Sized by the plan's bar slot: so much counter per seat.
+        width: seats * plan.barSlotWidth / plan.metersPerUnit,
+        height: plan.barSlotDepth / plan.metersPerUnit,
         seatLayout: const SeatLayout(bottom: seats),
         statusPerSeat: true,
         bar: true,
@@ -161,9 +163,12 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
           _ => 2,
         },
         seatLayout: _defaultSeats(item),
+        square: item == PaletteItem.roundedSquareTable,
       );
+      // Rectangles and squares are sized by the plan's table settings.
+      final sized = sizeTable(plan, table);
       return (
-        plan: plan.copyWith(tables: [...plan.tables, table]),
+        plan: plan.copyWith(tables: [...plan.tables, sized]),
         description: 'Table ${table.label}',
       );
   }

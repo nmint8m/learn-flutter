@@ -13,10 +13,17 @@ class DesignPanel extends StatelessWidget {
     super.key,
     required this.section,
     required this.onItemTapped,
+    this.settings = const [],
   });
 
   final PaletteSection section;
   final ValueChanged<PaletteItem> onItemTapped;
+
+  /// The table types' settings, shown under "Table configuration" in the
+  /// Table & Seat step: a title, a summary of the values, and what tapping
+  /// does. Each is keyed `config-<key>`. Empty hides the section.
+  final List<({String key, String title, String summary, VoidCallback onTap})>
+  settings;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +64,33 @@ class DesignPanel extends StatelessWidget {
             ),
           for (final item in items)
             _PaletteTile(item: item, onTap: () => onItemTapped(item)),
+          if (section == PaletteSection.tableAndSeat &&
+              settings.isNotEmpty) ...[
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                'TABLE CONFIGURATION',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+            for (final setting in settings)
+              ListTile(
+                key: ValueKey('config-${setting.key}'),
+                dense: true,
+                leading: const SizedBox.square(
+                  dimension: 32,
+                  child: Icon(Icons.straighten),
+                ),
+                title: Text(setting.title),
+                subtitle: Text(setting.summary),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: setting.onTap,
+              ),
+          ],
         ],
       ),
     );

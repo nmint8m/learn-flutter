@@ -93,7 +93,8 @@ class FloorPlanView extends StatefulWidget {
     this.onSelectedDragStart,
     this.onSelectedDrag,
     this.onSelectedDragEnd,
-    this.showTables = true,
+    this.dimTables = false,
+    this.dimRoom = false,
     this.showRulers = false,
     this.controller,
   });
@@ -129,10 +130,15 @@ class FloorPlanView extends StatefulWidget {
   final void Function(Offset at, double touchRadius)? onSelectedDragStart;
   final VoidCallback? onSelectedDragEnd;
 
-  /// False hides the tables and their seats, e.g. while designing the room.
-  final bool showTables;
+  /// Draws the tables and their seats at 30% opacity, e.g. while designing
+  /// the room.
+  final bool dimTables;
 
-  /// Shows rulers in floor units along the top and left edges. They stay in
+  /// Draws the room's walls, doors, windows and fixtures at 30% opacity,
+  /// e.g. while placing tables. The floor and grid stay as they are.
+  final bool dimRoom;
+
+  /// Shows rulers in meters along the top and left edges. They stay in
   /// place while zooming and panning, and their marks follow the floor.
   final bool showRulers;
 
@@ -167,6 +173,9 @@ class _FloorPlanViewState extends State<FloorPlanView> {
   /// How far the rulers' marks reach past the room on each side, in meters.
   static const _rulerMarginMeters = 3.0;
 
+  /// The opacity of the items the current step isn't about.
+  static const _dimmed = 0.3;
+
   /// Thickness of each ruler, in pixels.
   static const _rulerSize = 24.0;
 
@@ -187,7 +196,8 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :onSelectedDragStart,
       :onSelectedDrag,
       :onSelectedDragEnd,
-      :showTables,
+      :dimTables,
+      :dimRoom,
       :showRulers,
     ) = widget;
     final moving = onSelectedDrag != null;
@@ -338,6 +348,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         floorColor: colors.surface,
                         highlightColor: colors.primary,
                         onHighlightColor: colors.onPrimary,
+                        roomOpacity: dimRoom ? _dimmed : 1,
                       ),
                     ),
                   ),
@@ -353,22 +364,23 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         ),
                         pixelsPerUnit: pixelsPerUnit,
                         selected: selected == ElementRef(index),
+                        opacity: dimRoom ? _dimmed : 1,
                       ),
-                  if (showTables)
-                    for (final table in plan.tables)
-                      _TableWidget(
-                        key: ValueKey('table-${table.id}'),
-                        table: table,
-                        rect: toPixels(
-                          table.x,
-                          table.y,
-                          table.width,
-                          table.height,
-                        ),
-                        pixelsPerUnit: pixelsPerUnit,
-                        statusOf: statusOf,
-                        selected: selected == TableRef(table.id),
+                  for (final table in plan.tables)
+                    _TableWidget(
+                      key: ValueKey('table-${table.id}'),
+                      table: table,
+                      rect: toPixels(
+                        table.x,
+                        table.y,
+                        table.width,
+                        table.height,
                       ),
+                      pixelsPerUnit: pixelsPerUnit,
+                      statusOf: statusOf,
+                      selected: selected == TableRef(table.id),
+                      opacity: dimTables ? _dimmed : 1,
+                    ),
                   // On top of everything: the selected wall's highlight and its
                   // start and end labels.
                   Positioned.fill(
@@ -439,6 +451,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
               : (room.top, room.bottom),
           margin: _rulerMarginMeters / plan.metersPerUnit,
           pixelsPerUnit: pixelsPerUnit,
+          metersPerUnit: plan.metersPerUnit,
           background: colors.surfaceContainer,
           floorBand: colors.surfaceContainerHighest,
           tickColor: colors.onSurfaceVariant,
@@ -451,7 +464,21 @@ class _FloorPlanViewState extends State<FloorPlanView> {
               child: Row(
                 children: [
                   // The corner where the two rulers meet.
-                  Container(width: ruler, color: colors.surfaceContainer),
+                  // The corner says what the marks count: meters.
+                  Container(
+                    key: const ValueKey('ruler-unit'),
+                    width: ruler,
+                    color: colors.surfaceContainer,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'm',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: CustomPaint(
                       key: const ValueKey('ruler-top'),
@@ -533,6 +560,7 @@ class _RulerPainter extends CustomPainter {
     required this.range,
     required this.margin,
     required this.pixelsPerUnit,
+    required this.metersPerUnit,
     required this.background,
     required this.floorBand,
     required this.tickColor,
@@ -551,6 +579,9 @@ class _RulerPainter extends CustomPainter {
   /// How far the marks carry on past [range] on both ends, in floor units.
   final double margin;
   final double pixelsPerUnit;
+
+  /// The marks are labelled in meters: a floor unit is this many meters.
+  final double metersPerUnit;
   final Color background;
   final Color floorBand;
   final Color tickColor;
@@ -585,16 +616,19 @@ class _RulerPainter extends CustomPainter {
       Paint()..color = floorBand,
     );
 
-    // The smallest steps that are still far enough apart to read.
-    const steps = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
-    final minor = steps.firstWhere(
-      (s) => s * pixelsPerShownUnit >= 6,
+    // The smallest steps, in meters, that are still far enough apart to
+    // read.
+    final pixelsPerMeter = pixelsPerShownUnit / metersPerUnit;
+    const steps = [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0];
+    final minorMeters = steps.firstWhere(
+      (s) => s * pixelsPerMeter >= 6,
       orElse: () => steps.last,
     );
     final labelled = steps.firstWhere(
-      (s) => s >= minor && s * pixelsPerShownUnit >= 36,
+      (s) => s >= minorMeters && s * pixelsPerMeter >= 36,
       orElse: () => steps.last,
     );
+    final minor = minorMeters / metersPerUnit; // In floor units.
 
     final tick = Paint()
       ..color = tickColor
@@ -607,7 +641,8 @@ class _RulerPainter extends CustomPainter {
       final at = toScreen(units);
       if (at < -1 || at > along + 1) continue;
 
-      final isLabelled = _isMultiple(units, labelled);
+      final meters = i * minorMeters;
+      final isLabelled = _isMultiple(meters, labelled);
       final length = isLabelled ? across * 0.5 : across * 0.25;
       if (horizontal) {
         canvas.drawLine(Offset(at, across - length), Offset(at, across), tick);
@@ -618,7 +653,7 @@ class _RulerPainter extends CustomPainter {
       if (isLabelled) {
         final text = TextPainter(
           text: TextSpan(
-            text: _format(units),
+            text: _format(meters),
             style: TextStyle(fontSize: 9, color: tickColor),
           ),
           textDirection: TextDirection.ltr,
@@ -651,8 +686,13 @@ class _RulerPainter extends CustomPainter {
     return (ratio - ratio.roundToDouble()).abs() < 1e-6;
   }
 
-  static String _format(double units) =>
-      units == units.roundToDouble() ? '${units.toInt()}' : '$units';
+  /// "3", "2.5", "0.25": meters, without float noise.
+  static String _format(double meters) {
+    final rounded = (meters * 100).roundToDouble() / 100;
+    return rounded == rounded.roundToDouble()
+        ? '${rounded.toInt()}'
+        : '$rounded';
+  }
 
   @override
   bool shouldRepaint(_RulerPainter old) =>
@@ -662,6 +702,7 @@ class _RulerPainter extends CustomPainter {
       old.range != range ||
       old.margin != margin ||
       old.pixelsPerUnit != pixelsPerUnit ||
+      old.metersPerUnit != metersPerUnit ||
       old.background != background ||
       old.floorBand != floorBand ||
       old.tickColor != tickColor;
@@ -679,6 +720,7 @@ class _FloorPainter extends CustomPainter {
     this.selected,
     this.selectionOnly = false,
     this.handlesActive = false,
+    this.roomOpacity = 1,
   });
 
   final FloorPlan plan;
@@ -699,6 +741,10 @@ class _FloorPainter extends CustomPainter {
   /// second with this set on top, so labels are never hidden under fixtures
   /// or tables.
   final bool selectionOnly;
+
+  /// The walls, doors and windows are drawn at this opacity (the floor and
+  /// grid aren't).
+  final double roomOpacity;
 
   /// In move mode, wall end markers are drawn bigger: they can be dragged.
   final bool handlesActive;
@@ -745,6 +791,14 @@ class _FloorPainter extends CustomPainter {
       }
     }
     canvas.restore();
+
+    // Walls, doors and windows, faded together as one layer.
+    if (roomOpacity < 1) {
+      canvas.saveLayer(
+        null,
+        Paint()..color = Color.fromRGBO(0, 0, 0, roomOpacity),
+      );
+    }
 
     final wallPaint = Paint()
       ..color = lineColor.withValues(alpha: 0.8)
@@ -847,6 +901,7 @@ class _FloorPainter extends CustomPainter {
         text.paint(canvas, anchor - Offset(text.width / 2, text.height / 2));
       }
     }
+    if (roomOpacity < 1) canvas.restore();
   }
 
   /// Highlights the selected wall, outer wall, door or window. Walls also get
@@ -983,7 +1038,8 @@ class _FloorPainter extends CustomPainter {
       old.onHighlightColor != onHighlightColor ||
       old.selected != selected ||
       old.selectionOnly != selectionOnly ||
-      old.handlesActive != handlesActive;
+      old.handlesActive != handlesActive ||
+      old.roomOpacity != roomOpacity;
 }
 
 /// Places [child] so its center is at [rect]'s center, turned by [degrees].
@@ -992,17 +1048,22 @@ class _Placed extends StatelessWidget {
     required this.rect,
     required this.degrees,
     required this.child,
+    this.opacity = 1,
   });
 
   final Rect rect;
   final double degrees;
   final Widget child;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
     return Positioned.fromRect(
       rect: rect,
-      child: Transform.rotate(angle: degrees * math.pi / 180, child: child),
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.rotate(angle: degrees * math.pi / 180, child: child),
+      ),
     );
   }
 }
@@ -1013,12 +1074,14 @@ class _FixtureWidget extends StatelessWidget {
     required this.rect,
     required this.pixelsPerUnit,
     required this.selected,
+    this.opacity = 1,
   });
 
   final FixtureElement fixture;
   final Rect rect;
   final double pixelsPerUnit;
   final bool selected;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
@@ -1026,6 +1089,7 @@ class _FixtureWidget extends StatelessWidget {
     return _Placed(
       rect: rect,
       degrees: fixture.rotation,
+      opacity: opacity,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -1058,9 +1122,11 @@ class _TableWidget extends StatelessWidget {
     required this.pixelsPerUnit,
     required this.statusOf,
     required this.selected,
+    this.opacity = 1,
   });
 
   final FloorTable table;
+  final double opacity;
 
   /// The table top, in pixels.
   final Rect rect;
@@ -1107,6 +1173,7 @@ class _TableWidget extends StatelessWidget {
     return _Placed(
       rect: box,
       degrees: table.rotation,
+      opacity: opacity,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
