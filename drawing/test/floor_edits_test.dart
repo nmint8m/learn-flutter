@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' show Rect;
 
 import 'package:drawing/floor_plan/editor/floor_edits.dart';
+import 'package:drawing/geometry/geometry_paths.dart' show QuarterCircleCorner;
 import 'package:drawing/floor_plan/floor_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -513,14 +514,17 @@ void main() {
       );
     });
 
-    test('a plan without a slot uses 0.6 m; saved values stay in range', () {
-      expect((withBar.barSlotWidth, withBar.barSlotDepth), (0.6, 0.6));
-      final wide = FloorPlan.parse('''
+    test(
+      'a plan without a slot uses 0.6 × 0.4 m; saved values stay in range',
+      () {
+        expect((withBar.barSlotWidth, withBar.barSlotDepth), (0.6, 0.4));
+        final wide = FloorPlan.parse('''
         {"id": "p", "width": 10, "height": 10,
          "barSlot": {"width": 1, "depth": 0.1}}
       ''');
-      expect((wide.barSlotWidth, wide.barSlotDepth), (0.8, 0.4));
-    });
+        expect((wide.barSlotWidth, wide.barSlotDepth), (0.8, 0.4));
+      },
+    );
 
     test('width is kept within 0.6–0.8 m, depth within 0.4–0.6 m', () {
       final set = setBarSlot(withBar, widthMeters: 0.3, depthMeters: 2);
@@ -529,9 +533,9 @@ void main() {
 
     test('saved with the plan; the default is not written', () {
       expect(withBar.toJson().containsKey('barSlot'), isFalse);
-      final set = setBarSlot(withBar, widthMeters: 0.7, depthMeters: 0.4);
+      final set = setBarSlot(withBar, widthMeters: 0.7, depthMeters: 0.5);
       final again = FloorPlan.parse(set.encode());
-      expect((again.barSlotWidth, again.barSlotDepth), (0.7, 0.4));
+      expect((again.barSlotWidth, again.barSlotDepth), (0.7, 0.5));
     });
   });
 
@@ -555,8 +559,8 @@ void main() {
 
     test('rectangle: width and length follow the formula', () {
       // width 0.8, depth 0.5, buffer 0.1; 2 seats per end, 4 per long side:
-      // width  = max(2 × 0.8, 2 × 0.5) + 0.2 = 1.8 m
-      // length = 4 × 0.5 + 0.2 = 2.2 m
+      // width  = max(2 × 0.8 + 0.2, 2 × 0.5 + 0.2) = 1.8 m
+      // length = 4 × 0.8 + 5 × 0.1 = 3.7 m
       final set = setRectangleSettings(
         tables,
         widthMeters: 0.8,
@@ -564,13 +568,13 @@ void main() {
         bufferMeters: 0.1,
       );
       final r1 = set.tableById('R1')!;
-      expect(meters(r1.width), closeTo(2.2, 1e-9)); // Length, along x.
+      expect(meters(r1.width), closeTo(3.7, 1e-9)); // Length, along x.
       expect(meters(r1.height), closeTo(1.8, 1e-9)); // Width, across.
       expect((r1.x, r1.y), (20, 12));
       // Squares are left alone.
       expect(set.tableById('S1')!.width, 3);
 
-      // 1 seat per end: max(0.8, 1.0) + 0.2 = 1.2 m.
+      // 1 seat per end: max(0.8 + 0.2, 2 × 0.5 + 0.2) = 1.2 m.
       final fewer = setRectangleSeats(set, const TableRef('R1'), ends: 1);
       expect(meters(fewer.tableById('R1')!.height), closeTo(1.2, 1e-9));
     });
@@ -599,9 +603,9 @@ void main() {
     );
 
     test('square: every square table gets the width as its side', () {
-      final set = setSquareSettings(tables, widthMeters: 0.9);
+      final set = setSquareSettings(tables, widthMeters: 0.75);
       final s1 = set.tableById('S1')!;
-      expect((meters(s1.width), meters(s1.height)), (0.9, 0.9));
+      expect((meters(s1.width), meters(s1.height)), (0.75, 0.75));
       expect(set.tableById('R1')!.width, 4); // Rectangles untouched.
     });
 
@@ -612,17 +616,158 @@ void main() {
         depthMeters: 0.9,
         bufferMeters: 0.2,
       );
-      expect(set.squareSeatWidth, 1);
+      expect(set.squareSeatWidth, 0.8);
       expect(
         (set.rectSeatWidth, set.rectSeatDepth, set.rectBuffer),
         (0.6, 0.6, 0.2),
       );
       final again = FloorPlan.parse(set.encode());
-      expect(again.squareSeatWidth, 1);
+      expect(again.squareSeatWidth, 0.8);
       expect(
         (again.rectSeatWidth, again.rectSeatDepth, again.rectBuffer),
         (0.6, 0.6, 0.2),
       );
+    });
+  });
+
+  group('circle settings', () {
+    final circles = FloorPlan.parse('''
+      {"id": "p", "width": 40, "height": 24,
+       "tables": [
+         {"id": "C4", "label": "C4", "shape": "circle",
+          "x": 10, "y": 12, "width": 3, "height": 3, "seats": {"around": 4}},
+         {"id": "C6", "label": "C6", "shape": "circle",
+          "x": 20, "y": 12, "width": 3, "height": 3, "seats": {"around": 6}},
+         {"id": "C5", "label": "C5", "shape": "circle",
+          "x": 30, "y": 12, "width": 3, "height": 3, "seats": {"around": 5}}]}
+    ''');
+    double meters(FloorPlan p, String id) =>
+        p.tableById(id)!.width * p.metersPerUnit;
+
+    test('default radii: 45, 69, 76 and 106 cm', () {
+      expect(circles.circleRadii, {4: 0.45, 6: 0.69, 8: 0.76, 10: 1.06});
+      final (min, max) = FloorPlan.circleRadiusRange(6);
+      expect(min, closeTo(0.64, 1e-9));
+      expect(max, closeTo(0.74, 1e-9));
+    });
+
+    test('tables with 4, 6, 8 or 10 seats are twice their radius across', () {
+      final set = setCircleSettings(circles, radiiMeters: {4: 0.48, 6: 0.65});
+      expect(meters(set, 'C4'), closeTo(0.96, 1e-9));
+      expect(meters(set, 'C6'), closeTo(1.3, 1e-9));
+      expect(set.tableById('C4')!.height, set.tableById('C4')!.width);
+      expect(meters(set, 'C5'), 1.5); // 5 seats: no setting, untouched.
+      expect(set.circleRadii[8], 0.76); // Left out: kept.
+    });
+
+    test('circle seats: 4, 6, 8 or 10, sized from the settings', () {
+      final set = setCircleSeats(circles, const TableRef('C5'), 10);
+      final c5 = set.tableById('C5')!;
+      expect(c5.seats, hasLength(10));
+      expect(meters(set, 'C5'), closeTo(2.12, 1e-9));
+      expect(c5.height, c5.width);
+      expect((c5.x, c5.y), (30, 12)); // Around its center.
+      // Other counts change nothing.
+      expect(setCircleSeats(circles, const TableRef('C5'), 7), same(circles));
+      // Rotation is offered for circles too.
+      expect(itemRotation(circles, const TableRef('C4')), 0);
+    });
+
+    test('kept within 5 cm of the default radius, and saved', () {
+      final set = setCircleSettings(circles, radiiMeters: {4: 0.2, 10: 1.5});
+      expect(set.circleRadii[4], closeTo(0.4, 1e-9));
+      expect(set.circleRadii[10], closeTo(1.11, 1e-9));
+      expect(circles.toJson().containsKey('circleTable'), isFalse);
+      final again = FloorPlan.parse(set.encode());
+      expect(again.circleRadii[4], closeTo(0.4, 1e-9));
+      expect(again.circleRadii[10], closeTo(1.11, 1e-9));
+      expect(again.circleRadii[6], 0.69);
+    });
+  });
+
+  group('quarter circle settings', () {
+    final quarters = FloorPlan.parse('''
+      {"id": "p", "width": 40, "height": 24,
+       "tables": [
+         {"id": "Q1", "label": "Q1", "shape": "quarterCircle",
+          "corner": "bottomRight", "x": 10, "y": 12, "width": 4, "height": 4,
+          "seats": {"custom": [{"x": 1, "y": 1}]}},
+         {"id": "Q3", "label": "Q3", "shape": "quarterCircle",
+          "corner": "topLeft", "x": 20, "y": 12, "width": 4, "height": 4,
+          "seats": {"custom": [{"x": 1, "y": 1}, {"x": 2, "y": 2},
+                               {"x": 3, "y": 3}]}},
+         {"id": "Q4", "label": "Q4", "shape": "quarterCircle",
+          "corner": "topLeft", "x": 30, "y": 12, "width": 4, "height": 4,
+          "seats": {"custom": [{"x": 1, "y": 1}, {"x": 2, "y": 2},
+                               {"x": 3, "y": 3}, {"x": 4, "y": 4}]}}]}
+    ''');
+    double meters(FloorPlan p, String id) =>
+        p.tableById(id)!.width * p.metersPerUnit;
+
+    test('default radii: 55, 62 and 68 cm, each ± 5 cm', () {
+      expect(quarters.quarterCircleRadii, {1: 0.55, 2: 0.62, 3: 0.68});
+      final (min, max) = FloorPlan.quarterCircleRadiusRange(2);
+      expect(min, closeTo(0.57, 1e-9));
+      expect(max, closeTo(0.67, 1e-9));
+    });
+
+    test(
+      'tables with 1, 2 or 3 seats get their radius, seats on the curve',
+      () {
+        final set = setQuarterCircleSettings(
+          quarters,
+          radiiMeters: {1: 0.58, 3: 0.65},
+        );
+        expect(meters(set, 'Q1'), closeTo(0.58, 1e-9));
+        expect(set.tableById('Q1')!.height, set.tableById('Q1')!.width);
+        expect(meters(set, 'Q3'), closeTo(0.65, 1e-9));
+        expect(meters(set, 'Q4'), 2); // 4 seats: no setting, untouched.
+        expect(set.quarterCircleRadii[2], 0.62); // Left out: kept.
+
+        // Q3's curve is top left: its circle's center is the bottom-right
+        // corner, and the seats sit just past the curve at 15°, 45°, 75°
+        // into it.
+        final q3 = set.tableById('Q3')!;
+        final center = Offset(q3.width / 2, q3.height / 2);
+        for (final seat in q3.seatLayout.custom) {
+          final d = seat - center;
+          expect(
+            d.distance,
+            closeTo(
+              q3.width + SeatLayout.seatGap + SeatLayout.seatSize / 2,
+              1e-9,
+            ),
+          );
+          expect(d.dx, lessThan(0));
+          expect(d.dy, lessThan(0));
+        }
+      },
+    );
+
+    test('seat count: 1, 2 or 3, sized from the settings', () {
+      final set = setQuarterCircleSeats(quarters, const TableRef('Q4'), 1);
+      final q4 = set.tableById('Q4')!;
+      expect(q4.seats, hasLength(1));
+      expect(meters(set, 'Q4'), closeTo(0.55, 1e-9));
+      expect(q4.shape.corner, QuarterCircleCorner.topLeft);
+      expect(
+        setQuarterCircleSeats(quarters, const TableRef('Q4'), 4),
+        same(quarters),
+      );
+      expect(itemRotation(quarters, const TableRef('Q1')), 0);
+    });
+
+    test('kept within 5 cm of the default, and saved', () {
+      final set = setQuarterCircleSettings(
+        quarters,
+        radiiMeters: {1: 0.1, 3: 0.9},
+      );
+      expect(set.quarterCircleRadii[1], closeTo(0.5, 1e-9));
+      expect(set.quarterCircleRadii[3], closeTo(0.73, 1e-9));
+      expect(quarters.toJson().containsKey('quarterCircleTable'), isFalse);
+      final again = FloorPlan.parse(set.encode());
+      expect(again.quarterCircleRadii[1], closeTo(0.5, 1e-9));
+      expect(again.quarterCircleRadii[3], closeTo(0.73, 1e-9));
     });
   });
 

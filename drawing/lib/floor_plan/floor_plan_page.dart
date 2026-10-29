@@ -127,9 +127,27 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   }
 
   /// A double tap selects the item under it and starts moving it.
+  ///
+  /// While an item is being edited or moved, a double tap elsewhere first
+  /// saves the plan and lets go of that item: on empty floor nothing else
+  /// is selected; on another item, that item starts moving instead. A
+  /// double tap on the item already being moved keeps it moving.
   void _onFloorDoubleTap(FloorPlan plan, Offset at) {
     final hit = hitTestItem(plan, at, tables: _step == DesignStep.tableAndSeat);
-    if (hit == null) return;
+    final active = _selected != null && (_editing || _moving);
+    if (hit != null && hit == _selected && _moving) return;
+    if (active && hit != _selected) _save(_edited ?? plan);
+    if (hit == null) {
+      if (active) {
+        setState(() {
+          _selected = null;
+          _editing = false;
+          _moving = false;
+          _confirmingRemove = null;
+        });
+      }
+      return;
+    }
     setState(() {
       _selected = hit;
       _moving = true;
@@ -227,6 +245,27 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
             '${m(plan.barSlotDepth)} deep',
         onTap: open(() => _editBarSlot(plan)),
       ),
+      (
+        key: 'circle',
+        title: 'Circle',
+        summary: [
+          'Radius',
+          for (final MapEntry(key: seats, value: r) in plan.circleRadii.entries)
+            '$seats seats: ${_centimeters(r)} cm',
+        ].join('\n'),
+        onTap: open(() => _editCircleSettings(plan)),
+      ),
+      (
+        key: 'quarter-circle',
+        title: 'Quarter circle',
+        summary: [
+          'Radius',
+          for (final MapEntry(key: seats, value: r)
+              in plan.quarterCircleRadii.entries)
+            '$seats seat${seats == 1 ? '' : 's'}: ${_centimeters(r)} cm',
+        ].join('\n'),
+        onTap: open(() => _editQuarterCircleSettings(plan)),
+      ),
     ];
   }
 
@@ -309,6 +348,90 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
     );
   }
 
+  /// [meters] in whole centimeters, e.g. 0.69 → "69".
+  static String _centimeters(double meters) => '${(meters * 100).round()}';
+
+  Future<void> _editCircleSettings(FloorPlan plan) async {
+    final values = await showTableSettingsDialog(
+      context,
+      title: 'Circle',
+      description:
+          'The radius of every circle table with this many seats around '
+          'it, in centimeters: up to 5 cm more or less than the default. '
+          'The table is twice the radius across.',
+      keyPrefix: 'circle',
+      unit: 'cm',
+      settings: [
+        for (final MapEntry(key: seats, value: r) in plan.circleRadii.entries)
+          (
+            key: '$seats',
+            label: 'Radius, $seats seats',
+            value: (r * 100).roundToDouble(),
+            range: switch (FloorPlan.circleRadiusRange(seats)) {
+              (final min, final max) => (
+                (min * 100).roundToDouble(),
+                (max * 100).roundToDouble(),
+              ),
+            },
+          ),
+      ],
+    );
+    if (values == null || !mounted) return;
+    _applySettings(
+      plan,
+      'Circle',
+      (p) => setCircleSettings(
+        p,
+        radiiMeters: {
+          for (final MapEntry(:key, :value) in values.entries)
+            int.parse(key): value / 100,
+        },
+      ),
+      isSizedCircleTable,
+    );
+  }
+
+  Future<void> _editQuarterCircleSettings(FloorPlan plan) async {
+    final values = await showTableSettingsDialog(
+      context,
+      title: 'Quarter circle',
+      description:
+          'The radius of every quarter circle table with this many seats, '
+          'in centimeters: up to 5 cm more or less than the default. The '
+          'seats are spread evenly along the curve.',
+      keyPrefix: 'quarter-circle',
+      unit: 'cm',
+      settings: [
+        for (final MapEntry(key: seats, value: r)
+            in plan.quarterCircleRadii.entries)
+          (
+            key: '$seats',
+            label: 'Radius, $seats seat${seats == 1 ? '' : 's'}',
+            value: (r * 100).roundToDouble(),
+            range: switch (FloorPlan.quarterCircleRadiusRange(seats)) {
+              (final min, final max) => (
+                (min * 100).roundToDouble(),
+                (max * 100).roundToDouble(),
+              ),
+            },
+          ),
+      ],
+    );
+    if (values == null || !mounted) return;
+    _applySettings(
+      plan,
+      'Quarter circle',
+      (p) => setQuarterCircleSettings(
+        p,
+        radiiMeters: {
+          for (final MapEntry(:key, :value) in values.entries)
+            int.parse(key): value / 100,
+        },
+      ),
+      isSizedQuarterCircleTable,
+    );
+  }
+
   Future<void> _editRectangleSettings(FloorPlan plan) async {
     final values = await showTableSettingsDialog(
       context,
@@ -316,8 +439,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       description:
           'Sizes every rectangle table from its seats (up to 2 at each end, '
           '4 along each long side):\n'
-          'width = max(seats per end × width, 2 × depth) + 2 × buffer\n'
-          'length = seats per long side × depth + 2 × buffer',
+          'width = max(seats per end × width + 2 × buffer, '
+          '2 × depth + 0.2)\n'
+          'length = seats per long side × width '
+          '+ (seats per long side + 1) × buffer',
       keyPrefix: 'rectangle',
       settings: [
         (
@@ -523,7 +648,9 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                     onFloorTap: _step.editable && !_moving
                         ? (at) => _onFloorTap(plan, at)
                         : null,
-                    onFloorDoubleTap: _step.editable && !_moving
+                    // Also in move mode: a double tap lets go of the item
+                    // (or moves on to another one).
+                    onFloorDoubleTap: _step.editable
                         ? (at) => _onFloorDoubleTap(plan, at)
                         : null,
                     onItemDropped: _step.editable
@@ -624,6 +751,8 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
               onNameChanged: (name) =>
                   _change(renameItem(_edited ?? plan, selected, name)),
               onClose: () => setState(() => _editing = false),
+              // Table names are in capitals; room and decor names aren't.
+              capitalizeName: selected is TableRef,
               lengthMeters: itemLengthMeters(plan, selected),
               // Doors and windows: which wall they're on.
               walls: switch (selected) {
@@ -713,6 +842,25 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   wasInside ? placeTableInsideRoom(resized, id) : resized,
                 );
               },
+              // Circle tables: 4, 6, 8 or 10 seats, each with its
+              // diameter from the Table configuration.
+              circleSeats: circleTable(plan, selected)?.seatLayout.count,
+              circleRadii: plan.circleRadii,
+              onCircleSeatsChanged: (n) =>
+                  _change(setCircleSeats(_edited ?? plan, selected, n)),
+              // Quarter circle tables: 1, 2 or 3 seats, each with its
+              // radius from the Table configuration.
+              quarterCircleSeats: quarterCircleTable(
+                plan,
+                selected,
+              )?.seatLayout.count,
+              quarterCircleCorner: quarterCircleTable(
+                plan,
+                selected,
+              )?.shape.corner,
+              quarterCircleRadii: plan.quarterCircleRadii,
+              onQuarterCircleSeatsChanged: (n) =>
+                  _change(setQuarterCircleSeats(_edited ?? plan, selected, n)),
               onRotationChanged: (degrees) =>
                   _change(rotateItem(_edited ?? plan, selected, degrees)),
               onLengthChanged: (meters) =>

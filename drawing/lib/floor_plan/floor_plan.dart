@@ -34,6 +34,8 @@ class FloorPlan {
     this.rectSeatWidth = defaultRectSeatWidth,
     this.rectSeatDepth = defaultRectSeatDepth,
     this.rectBuffer = defaultRectBuffer,
+    this.circleRadii = defaultCircleRadii,
+    this.quarterCircleRadii = defaultQuarterCircleRadii,
   });
 
   /// A bar slot's default width and depth, in meters, and the range they're
@@ -55,6 +57,35 @@ class FloorPlan {
   static const rectSeatWidthRange = (0.6, 0.8);
   static const rectSeatDepthRange = (0.4, 0.6);
   static const rectBufferRange = (0.0, 0.3);
+
+  /// Added to two seat depths for a rectangle table's narrowest width, in
+  /// meters. See [rectSeatWidth].
+  static const rectMinWidthExtra = 0.2;
+
+  /// A circle table's radius for each seat count, in meters: the defaults,
+  /// and how far each may be from its default. See [circleRadii].
+  static const defaultCircleRadii = {4: 0.45, 6: 0.69, 8: 0.76, 10: 1.06};
+  static const circleRadiusLeeway = 0.05;
+
+  /// The range a circle table's radius for [seats] is kept in, in meters:
+  /// its default ± [circleRadiusLeeway].
+  static (double, double) circleRadiusRange(int seats) {
+    final r = defaultCircleRadii[seats]!;
+    return (r - circleRadiusLeeway, r + circleRadiusLeeway);
+  }
+
+  /// A quarter circle table's radius for each seat count, in meters: the
+  /// defaults, and how far each may be from its default. See
+  /// [quarterCircleRadii].
+  static const defaultQuarterCircleRadii = {1: 0.55, 2: 0.62, 3: 0.68};
+  static const quarterCircleRadiusLeeway = 0.05;
+
+  /// The range a quarter circle table's radius for [seats] is kept in, in
+  /// meters: its default ± [quarterCircleRadiusLeeway].
+  static (double, double) quarterCircleRadiusRange(int seats) {
+    final r = defaultQuarterCircleRadii[seats]!;
+    return (r - quarterCircleRadiusLeeway, r + quarterCircleRadiusLeeway);
+  }
 
   final String id;
   final String name;
@@ -94,15 +125,27 @@ class FloorPlan {
   /// Sizes every rectangle table (a rounded rectangle that isn't a bar or a
   /// square), in meters:
   ///
-  ///   width  = max(seats per end × [rectSeatWidth], 2 × [rectSeatDepth])
-  ///            + 2 × [rectBuffer]
-  ///   length = seats per long side × [rectSeatDepth] + 2 × [rectBuffer]
+  ///   width  = max(seats per end × [rectSeatWidth] + 2 × [rectBuffer],
+  ///                2 × [rectSeatDepth] + [rectMinWidthExtra])
+  ///   length = seats per long side × [rectSeatWidth]
+  ///            + (seats per long side + 1) × [rectBuffer]
   ///
   /// The width is across the ends (up to 2 seats each), the length along the
   /// long sides (up to 4 seats each).
   final double rectSeatWidth;
   final double rectSeatDepth;
   final double rectBuffer;
+
+  /// The radius of every circle table with 4, 6, 8 or 10 seats, in meters,
+  /// by seat count (the keys of [defaultCircleRadii]). Circle tables with
+  /// other seat counts keep their size.
+  final Map<int, double> circleRadii;
+
+  /// The radius of every quarter circle table with 1, 2 or 3 seats, in
+  /// meters, by seat count (the keys of [defaultQuarterCircleRadii]). Its
+  /// seats are spread evenly just outside the curve. Quarter circles with
+  /// other seat counts keep their size and seats.
+  final Map<int, double> quarterCircleRadii;
 
   /// Reads a plan from a JSON string. Throws a [FormatException] that names
   /// the bad field if the JSON doesn't match the expected format.
@@ -175,6 +218,28 @@ class FloorPlan {
         defaultRectBuffer,
         rectBufferRange,
       ),
+      // Radii by seat count, e.g. `"circleTable": {"4": 0.45}`.
+      circleRadii: {
+        for (final seats in defaultCircleRadii.keys)
+          seats: _setting(
+            json,
+            'circleTable',
+            '$seats',
+            defaultCircleRadii[seats]!,
+            circleRadiusRange(seats),
+          ),
+      },
+      // Radii by seat count, e.g. `"quarterCircleTable": {"2": 0.57}`.
+      quarterCircleRadii: {
+        for (final seats in defaultQuarterCircleRadii.keys)
+          seats: _setting(
+            json,
+            'quarterCircleTable',
+            '$seats',
+            defaultQuarterCircleRadii[seats]!,
+            quarterCircleRadiusRange(seats),
+          ),
+      },
     );
 
     final ids = <String>{};
@@ -210,6 +275,8 @@ class FloorPlan {
     double? rectSeatWidth,
     double? rectSeatDepth,
     double? rectBuffer,
+    Map<int, double>? circleRadii,
+    Map<int, double>? quarterCircleRadii,
   }) => FloorPlan(
     id: id,
     name: name,
@@ -226,6 +293,8 @@ class FloorPlan {
     rectSeatWidth: rectSeatWidth ?? this.rectSeatWidth,
     rectSeatDepth: rectSeatDepth ?? this.rectSeatDepth,
     rectBuffer: rectBuffer ?? this.rectBuffer,
+    circleRadii: circleRadii ?? this.circleRadii,
+    quarterCircleRadii: quarterCircleRadii ?? this.quarterCircleRadii,
   );
 
   /// The plan as JSON, in the same format [parse] reads.
@@ -251,6 +320,18 @@ class FloorPlan {
         'width': _num(rectSeatWidth),
         'depth': _num(rectSeatDepth),
         'buffer': _num(rectBuffer),
+      },
+    if (defaultCircleRadii.entries.any((e) => circleRadii[e.key] != e.value))
+      'circleTable': {
+        for (final seats in defaultCircleRadii.keys)
+          '$seats': _num(circleRadii[seats]!),
+      },
+    if (defaultQuarterCircleRadii.entries.any(
+      (e) => quarterCircleRadii[e.key] != e.value,
+    ))
+      'quarterCircleTable': {
+        for (final seats in defaultQuarterCircleRadii.keys)
+          '$seats': _num(quarterCircleRadii[seats]!),
       },
   };
 

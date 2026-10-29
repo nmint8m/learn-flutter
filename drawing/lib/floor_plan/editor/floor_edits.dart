@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import '../../geometry/geometry_paths.dart' show QuarterCircleCorner;
 import '../floor_plan.dart';
 import 'palette.dart' show nextTableNumber;
 
@@ -291,22 +292,45 @@ int defaultSeatsOnSide(FloorTable table, SeatSide side) {
 
 /// [table] sized by the plan's settings: a square table's side is
 /// [FloorPlan.squareSeatWidth]; a rectangle follows
-/// [FloorPlan.rectSeatWidth]'s formula. Bars and other tables are returned
+/// [FloorPlan.rectSeatWidth]'s formula; a circle with 4, 6, 8 or 10 seats
+/// is twice that count's [FloorPlan.circleRadii] across; a quarter circle
+/// with 1, 2 or 3 seats gets that count's [FloorPlan.quarterCircleRadii]
+/// and its seats spread along the curve. Bars and other tables are returned
 /// as they are.
 FloorTable sizeTable(FloorPlan plan, FloorTable table) {
-  if (table.bar || table.shape.shape != TableShape.roundedRect) return table;
   final mpu = plan.metersPerUnit;
+  if (table.shape.shape == TableShape.quarterCircle) {
+    if (!isSizedQuarterCircleTable(table)) return table;
+    final seats = table.seatLayout.custom.length;
+    final radius = plan.quarterCircleRadii[seats]! / mpu;
+    return table.copyWith(
+      width: radius,
+      height: radius,
+      seatLayout: SeatLayout(
+        custom: quarterCircleSeats(table.shape.corner!, radius, seats),
+      ),
+    );
+  }
+  if (table.shape.shape == TableShape.circle) {
+    if (!isSizedCircleTable(table)) return table;
+    final diameter = 2 * plan.circleRadii[table.seatLayout.around]! / mpu;
+    return table.copyWith(width: diameter, height: diameter);
+  }
+  if (table.bar || table.shape.shape != TableShape.roundedRect) return table;
   if (isSquareTable(table)) {
     final side = plan.squareSeatWidth / mpu;
     return table.copyWith(width: side, height: side);
   }
   final (:long, :ends) = rectangleSeats(table);
   final buffer = 2 * plan.rectBuffer;
-  final across =
-      math.max(ends * plan.rectSeatWidth, 2 * plan.rectSeatDepth) + buffer;
-  // At least one seat's depth along, so a table without long-side seats
-  // still has a length.
-  final along = math.max(long, 1) * plan.rectSeatDepth + buffer;
+  final across = math.max(
+    ends * plan.rectSeatWidth + buffer,
+    2 * plan.rectSeatDepth + FloorPlan.rectMinWidthExtra,
+  );
+  // At least one seat's width along, so a table without long-side seats
+  // still has a length; a buffer before, between and after the seats.
+  final seats = math.max(long, 1);
+  final along = seats * plan.rectSeatWidth + (seats + 1) * plan.rectBuffer;
   // The table's width (x) runs along the long sides; its height across.
   return table.copyWith(width: along / mpu, height: across / mpu);
 }
@@ -423,16 +447,53 @@ FloorPlan rotateItem(FloorPlan plan, FloorItemRef ref, double degrees) {
   }
 }
 
-/// The rotation of a turnable item, in degrees: rounded rectangle and
-/// square tables, bars and fixtures. Null for anything else.
+/// The rotation of a turnable item, in degrees: rounded rectangle, square,
+/// circle and quarter circle tables, bars and fixtures. Null for anything
+/// else.
 double? itemRotation(FloorPlan plan, FloorItemRef ref) => switch (ref) {
-  TableRef() => (sidedTable(plan, ref) ?? barTable(plan, ref))?.rotation,
+  TableRef() =>
+    (sidedTable(plan, ref) ??
+            barTable(plan, ref) ??
+            circleTable(plan, ref) ??
+            quarterCircleTable(plan, ref))
+        ?.rotation,
   ElementRef(:final index) => switch (plan.elements[index]) {
     FixtureElement(:final rotation) => rotation,
     _ => null,
   },
   OutlineEdgeRef() => null,
 };
+
+/// The circle table [ref] points at, or null.
+FloorTable? circleTable(FloorPlan plan, FloorItemRef ref) => switch (ref) {
+  TableRef(:final id) => switch (plan.tableById(id)) {
+    final table? when table.shape.shape == TableShape.circle => table,
+    _ => null,
+  },
+  _ => null,
+};
+
+/// The seat counts a circle table can have: the ones the Table
+/// configuration has a diameter for.
+final circleSeatCounts = FloorPlan.defaultCircleRadii.keys.toList();
+
+/// [plan] with the circle table's seats set to [seats] (one of
+/// [circleSeatCounts]; anything else changes nothing), spread around it.
+/// The table takes that count's diameter around its center, and is nudged
+/// back inside the room if it was inside.
+FloorPlan setCircleSeats(FloorPlan plan, FloorItemRef ref, int seats) {
+  final table = circleTable(plan, ref);
+  if (table == null || !circleSeatCounts.contains(seats)) return plan;
+  final next = plan.copyWith(
+    tables: [
+      for (final t in plan.tables)
+        t.id == table.id
+            ? t.copyWith(seatLayout: SeatLayout(around: seats))
+            : t,
+    ],
+  );
+  return _resizeTable(plan, next, table.id);
+}
 
 /// The most seats a bar can have.
 const maxBarSeats = 10;
@@ -891,42 +952,58 @@ Rect _box(Offset center, double width, double height, double rotation) =>
 /// walls, doors, fixtures, tables or seats that reach past it.
 Rect planContentBounds(FloorPlan plan) {
   var bounds = Rect.fromLTWH(0, 0, plan.width, plan.height);
-  void add(Rect r) => bounds = bounds.expandToInclude(r);
-  void addPoint(Offset p) =>
-      add(Rect.fromCenter(center: p, width: 0, height: 0));
-
-  plan.floorOutline.forEach(addPoint);
+  for (final p in plan.floorOutline) {
+    bounds = bounds.expandToInclude(Rect.fromPoints(p, p));
+  }
   for (final element in plan.elements) {
-    switch (element) {
-      case WallElement(:final points):
-        points.forEach(addPoint);
-      case OpeningElement(:final ends):
-        addPoint(ends.$1);
-        addPoint(ends.$2);
-      case FixtureElement(
-        :final x,
-        :final y,
-        :final width,
-        :final height,
-        :final rotation,
-      ):
-        add(_box(Offset(x, y), width, height, rotation));
-    }
+    bounds = bounds.expandToInclude(_elementBounds(element));
   }
   for (final t in plan.tables) {
-    final center = Offset(t.x, t.y);
-    add(_box(center, t.width, t.height, t.rotation));
-    for (final seat in t.seats) {
-      final at = t.rotation == 0
-          ? seat.offset
-          : Offset.fromDirection(
-              seat.offset.direction + t.rotation * math.pi / 180,
-              seat.offset.distance,
-            );
-      add(
-        Rect.fromCircle(center: center + at, radius: SeatLayout.seatSize / 2),
-      );
-    }
+    bounds = bounds.expandToInclude(_tableBounds(t));
+  }
+  return bounds;
+}
+
+/// The box around the item [ref] points at, in floor units: a table with
+/// its seats, a fixture, or a wall's, door's or window's ends.
+Rect itemBounds(FloorPlan plan, FloorItemRef ref) => switch (ref) {
+  TableRef(:final id) => _tableBounds(plan.tableById(id)!),
+  ElementRef(:final index) => _elementBounds(plan.elements[index]),
+  OutlineEdgeRef(:final index) => _pointsBounds(
+    _edge(plan.floorOutline, index),
+  ),
+};
+
+Rect _pointsBounds(Iterable<Offset> points) => points
+    .map((p) => Rect.fromPoints(p, p))
+    .reduce((a, b) => a.expandToInclude(b));
+
+Rect _elementBounds(FloorElement element) => switch (element) {
+  WallElement(:final points) => _pointsBounds(points),
+  OpeningElement(:final ends) => _pointsBounds([ends.$1, ends.$2]),
+  FixtureElement(
+    :final x,
+    :final y,
+    :final width,
+    :final height,
+    :final rotation,
+  ) =>
+    _box(Offset(x, y), width, height, rotation),
+};
+
+Rect _tableBounds(FloorTable t) {
+  final center = Offset(t.x, t.y);
+  var bounds = _box(center, t.width, t.height, t.rotation);
+  for (final seat in t.seats) {
+    final at = t.rotation == 0
+        ? seat.offset
+        : Offset.fromDirection(
+            seat.offset.direction + t.rotation * math.pi / 180,
+            seat.offset.distance,
+          );
+    bounds = bounds.expandToInclude(
+      Rect.fromCircle(center: center + at, radius: SeatLayout.seatSize / 2),
+    );
   }
   return bounds;
 }
@@ -1155,4 +1232,154 @@ FloorPlan setRectangleSettings(
     rectBuffer: _clamp(bufferMeters, FloorPlan.rectBufferRange),
   ),
   _isRectangle,
+);
+
+/// Whether [t] is sized by [FloorPlan.circleRadii]: a circle with only
+/// 4, 6, 8 or 10 seats, all around it.
+bool isSizedCircleTable(FloorTable t) =>
+    t.shape.shape == TableShape.circle &&
+    t.seatLayout.count == t.seatLayout.around &&
+    FloorPlan.defaultCircleRadii.containsKey(t.seatLayout.around);
+
+/// [plan] with new circle table radii, in meters by seat count (each kept
+/// within [FloorPlan.circleRadiusRange]; counts left out keep their value),
+/// and every circle table with 4, 6, 8 or 10 seats resized.
+FloorPlan setCircleSettings(
+  FloorPlan plan, {
+  required Map<int, double> radiiMeters,
+}) => _resizeAll(
+  plan,
+  plan.copyWith(
+    circleRadii: {
+      for (final seats in FloorPlan.defaultCircleRadii.keys)
+        seats: _clamp(
+          radiiMeters[seats] ?? plan.circleRadii[seats]!,
+          FloorPlan.circleRadiusRange(seats),
+        ),
+    },
+  ),
+  isSizedCircleTable,
+);
+
+/// Whether [t] is sized by [FloorPlan.quarterCircleRadii]: a quarter circle
+/// with only 1, 2 or 3 seats of its own.
+bool isSizedQuarterCircleTable(FloorTable t) =>
+    t.shape.shape == TableShape.quarterCircle &&
+    t.seatLayout.count == t.seatLayout.custom.length &&
+    FloorPlan.defaultQuarterCircleRadii.containsKey(t.seatLayout.custom.length);
+
+/// Where a quarter circle table [radius] across with its curve at [corner]
+/// has its circle's center (the corner opposite the curve, relative to the
+/// table's center), and the angle the curve starts at; it runs 90° from
+/// there.
+({Offset center, double start}) quarterCircleArc(
+  QuarterCircleCorner corner,
+  double radius,
+) {
+  final half = radius / 2;
+  return switch (corner) {
+    QuarterCircleCorner.topLeft => (center: Offset(half, half), start: math.pi),
+    QuarterCircleCorner.topRight => (
+      center: Offset(-half, half),
+      start: -math.pi / 2,
+    ),
+    QuarterCircleCorner.bottomRight => (
+      center: Offset(-half, -half),
+      start: 0.0,
+    ),
+    QuarterCircleCorner.bottomLeft => (
+      center: Offset(half, -half),
+      start: math.pi / 2,
+    ),
+  };
+}
+
+/// The direction of seat [index] of [seats] on a quarter circle's curve,
+/// from [quarterCircleArc]'s start: spread evenly, e.g. 15°, 45° and 75°
+/// in for 3 seats.
+double quarterCircleSeatAngle(double start, int index, int seats) =>
+    start + math.pi / 2 * (index + 0.5) / seats;
+
+/// [seats] seat positions for a quarter circle table [radius] floor units
+/// across whose curve is at [corner]: spread evenly just outside the curve
+/// (see [quarterCircleSeatAngle]). Relative to the table's center, like
+/// [SeatLayout.custom].
+List<Offset> quarterCircleSeats(
+  QuarterCircleCorner corner,
+  double radius,
+  int seats,
+) {
+  final (:center, :start) = quarterCircleArc(corner, radius);
+  final distance = radius + SeatLayout.seatGap + SeatLayout.seatSize / 2;
+  return [
+    for (var i = 0; i < seats; i++)
+      center +
+          Offset.fromDirection(
+            quarterCircleSeatAngle(start, i, seats),
+            distance,
+          ),
+  ];
+}
+
+/// The quarter circle table [ref] points at, or null.
+FloorTable? quarterCircleTable(FloorPlan plan, FloorItemRef ref) =>
+    switch (ref) {
+      TableRef(:final id) => switch (plan.tableById(id)) {
+        final table? when table.shape.shape == TableShape.quarterCircle =>
+          table,
+        _ => null,
+      },
+      _ => null,
+    };
+
+/// The seat counts a quarter circle table can have: the ones the Table
+/// configuration has a radius for.
+final quarterCircleSeatCounts = FloorPlan.defaultQuarterCircleRadii.keys
+    .toList();
+
+/// [plan] with the quarter circle table's seats set to [seats] (one of
+/// [quarterCircleSeatCounts]; anything else changes nothing). The table
+/// takes that count's radius and its seats are spread along the curve; it
+/// is nudged back inside the room if it was inside.
+FloorPlan setQuarterCircleSeats(FloorPlan plan, FloorItemRef ref, int seats) {
+  final table = quarterCircleTable(plan, ref);
+  if (table == null || !quarterCircleSeatCounts.contains(seats)) return plan;
+  final next = plan.copyWith(
+    tables: [
+      for (final t in plan.tables)
+        t.id == table.id
+            ? t.copyWith(
+                seatLayout: SeatLayout(
+                  custom: quarterCircleSeats(
+                    table.shape.corner!,
+                    table.width,
+                    seats,
+                  ),
+                ),
+              )
+            : t,
+    ],
+  );
+  return _resizeTable(plan, next, table.id);
+}
+
+/// [plan] with new quarter circle table radii, in meters by seat count
+/// (each kept within [FloorPlan.quarterCircleRadiusRange]; counts left out
+/// keep their value), and every quarter circle table with 1, 2 or 3 seats
+/// resized.
+FloorPlan setQuarterCircleSettings(
+  FloorPlan plan, {
+  required Map<int, double> radiiMeters,
+}) => _resizeAll(
+  plan,
+  plan.copyWith(
+    quarterCircleRadii: {
+      for (final seats in FloorPlan.defaultQuarterCircleRadii.keys)
+        seats: _clamp(
+          radiiMeters[seats] ?? plan.quarterCircleRadii[seats]!,
+          FloorPlan.quarterCircleRadiusRange(seats),
+        ),
+    },
+  ),
+  isSizedQuarterCircleTable,
 );

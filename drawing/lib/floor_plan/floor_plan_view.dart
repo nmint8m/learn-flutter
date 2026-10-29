@@ -400,6 +400,28 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                       ),
                     ),
                   ),
+                  // In move mode the moving item gets a box around it and a
+                  // move badge on its top-left corner.
+                  if (selected case final ref?
+                      when moving && itemExists(plan, ref))
+                    _MovingHighlight(
+                      // Kept on screen: an item at the edge of the view
+                      // would otherwise have half its badge cut off.
+                      limit: Rect.fromLTRB(
+                        area.left * pixelsPerUnit,
+                        area.top * pixelsPerUnit,
+                        area.right * pixelsPerUnit,
+                        area.bottom * pixelsPerUnit,
+                      ),
+                      rect: switch (itemBounds(plan, ref)) {
+                        final b => Rect.fromLTRB(
+                          b.left * pixelsPerUnit,
+                          b.top * pixelsPerUnit,
+                          b.right * pixelsPerUnit,
+                          b.bottom * pixelsPerUnit,
+                        ),
+                      },
+                    ),
                 ],
               ),
             ),
@@ -1109,6 +1131,62 @@ class _FixtureWidget extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// The box and move badge around the item being moved. [rect] is the
+/// item's bounds, in the floor's pixels. The badge sits on the box's
+/// top-left corner, moved in as far as needed to stay inside [limit].
+class _MovingHighlight extends StatelessWidget {
+  const _MovingHighlight({required this.rect, required this.limit});
+
+  final Rect rect;
+  final Rect limit;
+
+  static const _badge = 24.0, _gap = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final box = rect.inflate(_gap);
+    final left = math.max(box.left - _badge / 2, limit.left);
+    final top = math.max(box.top - _badge / 2, limit.top);
+    return Positioned(
+      left: left,
+      top: top,
+      width: box.right - left,
+      height: box.bottom - top,
+      child: IgnorePointer(
+        child: Stack(
+          key: const ValueKey('moving-highlight'),
+          children: [
+            Positioned(
+              left: box.left - left,
+              top: box.top - top,
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.08),
+                  border: Border.all(color: colors.primary, width: 1.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+            Container(
+              key: const ValueKey('moving-badge'),
+              width: _badge,
+              height: _badge,
+              decoration: BoxDecoration(
+                color: colors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.open_with, size: 16, color: colors.onPrimary),
+            ),
+          ],
+        ),
       ),
     );
   }

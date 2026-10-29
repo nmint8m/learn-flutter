@@ -1,5 +1,9 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../geometry/geometry_shape.dart';
 import 'floor_edits.dart'
     show
         SeatSide,
@@ -7,7 +11,9 @@ import 'floor_edits.dart'
         maxSeatsPerEnd,
         maxSeatsPerLongSide,
         minSeatsPerEnd,
-        minSeatsPerLongSide;
+        minSeatsPerLongSide,
+        quarterCircleArc,
+        quarterCircleSeatAngle;
 
 /// The right side bar for editing the selected item's name.
 ///
@@ -20,6 +26,7 @@ class EditSidebar extends StatefulWidget {
     required this.name,
     required this.onNameChanged,
     required this.onClose,
+    this.capitalizeName = false,
     this.lengthMeters,
     this.onLengthChanged,
     this.walls,
@@ -37,6 +44,13 @@ class EditSidebar extends StatefulWidget {
     this.onRotationChanged,
     this.barSeats,
     this.onBarSeatsChanged,
+    this.circleSeats,
+    this.circleRadii = const {},
+    this.onCircleSeatsChanged,
+    this.quarterCircleSeats,
+    this.quarterCircleCorner,
+    this.quarterCircleRadii = const {},
+    this.onQuarterCircleSeatsChanged,
   });
 
   /// What the item is, e.g. "Table · circle".
@@ -44,6 +58,10 @@ class EditSidebar extends StatefulWidget {
   final String name;
   final ValueChanged<String> onNameChanged;
   final VoidCallback onClose;
+
+  /// Whether the name is typed in capitals, e.g. "A1" for a table. Either
+  /// way it takes only letters and digits.
+  final bool capitalizeName;
 
   /// The length of a door or window, in meters. Null hides the length field
   /// (other items).
@@ -83,6 +101,22 @@ class EditSidebar extends StatefulWidget {
   /// A bar's number of seats. Null hides the bar picture and seat count.
   final int? barSeats;
   final ValueChanged<int>? onBarSeatsChanged;
+
+  /// Circle tables: how many seats are around it, picked from the counts in
+  /// [circleRadii] (the Table configuration's radius in meters for each).
+  /// Null for other items.
+  final int? circleSeats;
+  final Map<int, double> circleRadii;
+  final ValueChanged<int>? onCircleSeatsChanged;
+
+  /// Quarter circle tables: how many seats are along the curve, picked from
+  /// the counts in [quarterCircleRadii] (the Table configuration's radius in
+  /// meters for each), and which corner the curve is at. Null for other
+  /// items.
+  final int? quarterCircleSeats;
+  final QuarterCircleCorner? quarterCircleCorner;
+  final Map<int, double> quarterCircleRadii;
+  final ValueChanged<int>? onQuarterCircleSeatsChanged;
 
   @override
   State<EditSidebar> createState() => _EditSidebarState();
@@ -128,6 +162,15 @@ class _EditSidebarState extends State<EditSidebar> {
               border: OutlineInputBorder(),
             ),
             textInputAction: TextInputAction.done,
+            // Letters and digits only: "a 1!" becomes "a1", or "A1" in
+            // capitals.
+            textCapitalization: widget.capitalizeName
+                ? TextCapitalization.characters
+                : TextCapitalization.none,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
+              if (widget.capitalizeName) const _UpperCaseFormatter(),
+            ],
             onChanged: widget.onNameChanged,
             onSubmitted: (_) => widget.onClose(),
           ),
@@ -166,6 +209,35 @@ class _EditSidebarState extends State<EditSidebar> {
             _SeatCountField(
               seats: seats,
               onChanged: (n) => widget.onBarSeatsChanged?.call(n),
+            ),
+          ],
+          if (widget.circleSeats case final seats?) ...[
+            const SizedBox(height: 24),
+            Text('Seats', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+            _CirclePreview(seats: seats),
+            const SizedBox(height: 16),
+            _SeatCountDropdown(
+              keyName: 'circle-seats',
+              seats: seats,
+              radii: widget.circleRadii,
+              onChanged: (n) => widget.onCircleSeatsChanged?.call(n),
+            ),
+          ],
+          if ((widget.quarterCircleSeats, widget.quarterCircleCorner) case (
+            final seats?,
+            final corner?,
+          )) ...[
+            const SizedBox(height: 24),
+            Text('Seats', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+            _QuarterCirclePreview(seats: seats, corner: corner),
+            const SizedBox(height: 16),
+            _SeatCountDropdown(
+              keyName: 'quarter-circle-seats',
+              seats: seats,
+              radii: widget.quarterCircleRadii,
+              onChanged: (n) => widget.onQuarterCircleSeatsChanged?.call(n),
             ),
           ],
           if (widget.rotation case final rotation?) ...[
@@ -244,6 +316,183 @@ class _EditSidebarState extends State<EditSidebar> {
             style: theme.textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Turns typed letters into capitals, keeping the cursor where it was.
+class _UpperCaseFormatter extends TextInputFormatter {
+  const _UpperCaseFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => newValue.copyWith(text: newValue.text.toUpperCase());
+}
+
+/// Picks a round table's number of seats from the counts in [radii] (the
+/// Table configuration's radius in meters for each). Keyed [keyName].
+class _SeatCountDropdown extends StatelessWidget {
+  const _SeatCountDropdown({
+    required this.keyName,
+    required this.seats,
+    required this.radii,
+    required this.onChanged,
+  });
+
+  final String keyName;
+  final int seats;
+  final Map<int, double> radii;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final known = radii.containsKey(seats);
+    // Rebuilt when the count changes elsewhere (e.g. undo), so the shown
+    // choice stays current.
+    return KeyedSubtree(
+      key: ValueKey('$keyName-$seats'),
+      child: DropdownButtonFormField<int>(
+        key: ValueKey(keyName),
+        // A count without a radius (e.g. 5) shows no choice.
+        initialValue: known ? seats : null,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Number of seats',
+          helperMaxLines: 2,
+          helperText: known
+              ? 'The radius comes from the Table configuration.'
+              : 'Now $seats seats. Pick a count to size the table.',
+          border: const OutlineInputBorder(),
+        ),
+        items: [
+          for (final MapEntry(key: n, value: r) in radii.entries)
+            DropdownMenuItem(
+              value: n,
+              child: Text(
+                '$n seat${n == 1 ? '' : 's'} · radius ${(r * 100).round()} cm',
+              ),
+            ),
+        ],
+        onChanged: (n) {
+          if (n != null) onChanged(n);
+        },
+      ),
+    );
+  }
+}
+
+/// A small picture of a quarter circle table with its curve at [corner]
+/// and [seats] seats spread along it.
+class _QuarterCirclePreview extends StatelessWidget {
+  const _QuarterCirclePreview({required this.seats, required this.corner});
+
+  final int seats;
+  final QuarterCircleCorner corner;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    const size = 140.0, table = 92.0, seat = 18.0;
+    const distance = table + 4 + seat / 2;
+    // The table's square, centered in the picture.
+    const box = Offset(size / 2, size / 2);
+    final (:center, :start) = quarterCircleArc(corner, table);
+    return Center(
+      key: const ValueKey('quarter-circle-preview'),
+      child: SizedBox.square(
+        dimension: size,
+        child: Stack(
+          children: [
+            Positioned(
+              left: (size - table) / 2,
+              top: (size - table) / 2,
+              child: GeometryShape.quarterCircle(
+                size: const Size.square(table),
+                corner: corner,
+                fillColor: colors.primaryContainer,
+                borderColor: colors.primary,
+                borderWidth: 1.5,
+              ),
+            ),
+            for (var i = 0; i < seats; i++)
+              switch (box +
+                  center +
+                  Offset.fromDirection(
+                    quarterCircleSeatAngle(start, i, seats),
+                    distance,
+                  )) {
+                final at => Positioned(
+                  left: at.dx - seat / 2,
+                  top: at.dy - seat / 2,
+                  child: Container(
+                    key: ValueKey('quarter-circle-preview-seat-$i'),
+                    width: seat,
+                    height: seat,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: colors.surfaceContainerHighest,
+                      border: Border.all(color: colors.outline),
+                    ),
+                  ),
+                ),
+              },
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small picture of a circle table with [seats] seats spread around it,
+/// the first at the top.
+class _CirclePreview extends StatelessWidget {
+  const _CirclePreview({required this.seats});
+
+  final int seats;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    const size = 132.0, table = 84.0, seat = 18.0;
+    const radius = (table + seat) / 2 + 4;
+    return Center(
+      key: const ValueKey('circle-preview'),
+      child: SizedBox.square(
+        dimension: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: table,
+              height: table,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.primaryContainer,
+                border: Border.all(color: colors.primary, width: 1.5),
+              ),
+            ),
+            for (var i = 0; i < seats; i++)
+              Transform.translate(
+                offset: Offset.fromDirection(
+                  -math.pi / 2 + 2 * math.pi * i / seats,
+                  radius,
+                ),
+                child: Container(
+                  key: ValueKey('circle-preview-seat-$i'),
+                  width: seat,
+                  height: seat,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors.surfaceContainerHighest,
+                    border: Border.all(color: colors.outline),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

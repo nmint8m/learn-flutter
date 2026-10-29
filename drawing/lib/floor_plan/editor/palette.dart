@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import '../../geometry/geometry_paths.dart';
 import '../floor_plan.dart';
-import 'floor_edits.dart' show sizeTable;
+import 'floor_edits.dart' show quarterCircleSeats, sizeTable;
 
 /// The groups shown in the design panel.
 enum PaletteSection {
@@ -24,10 +24,9 @@ enum PaletteItem {
   fixture('Fixture', PaletteSection.roomAndDecor),
   roundedRectTable('Rectangle', PaletteSection.tableAndSeat),
   roundedSquareTable('Square', PaletteSection.tableAndSeat),
+  barTable('Bar', PaletteSection.tableAndSeat),
   circleTable('Circle', PaletteSection.tableAndSeat),
-  semicircleTable('Semicircle', PaletteSection.tableAndSeat),
-  quarterCircleTable('Quarter circle', PaletteSection.tableAndSeat),
-  barTable('Bar', PaletteSection.tableAndSeat);
+  quarterCircleTable('Quarter circle', PaletteSection.tableAndSeat);
 
   const PaletteItem(this.label, this.section);
 
@@ -40,7 +39,6 @@ enum PaletteItem {
     roundedSquareTable ||
     barTable => const ShapeSpec.roundedRect(),
     circleTable => const ShapeSpec.circle(),
-    semicircleTable => const ShapeSpec.semicircle(SemicircleSide.top),
     quarterCircleTable => const ShapeSpec.quarterCircle(
       QuarterCircleCorner.bottomRight,
     ),
@@ -144,7 +142,6 @@ PaletteResult addPaletteItem(FloorPlan plan, PaletteItem item, Offset at) {
     case PaletteItem.roundedRectTable ||
         PaletteItem.roundedSquareTable ||
         PaletteItem.circleTable ||
-        PaletteItem.semicircleTable ||
         PaletteItem.quarterCircleTable:
       final number = nextTableNumber(plan);
       final table = FloorTable(
@@ -189,16 +186,10 @@ SeatLayout _defaultSeats(PaletteItem item) => switch (item) {
     right: 1,
   ),
   PaletteItem.circleTable => const SeatLayout(around: 4),
-  // Dome on top, seats along the flat edge.
-  PaletteItem.semicircleTable => const SeatLayout(bottom: 2),
-  // Two seats just outside the curve, at 30° and 60°. The quarter circle's
-  // center is its top-left corner (-2, -2) and its radius is 4.
+  // Two seats just outside the curve. Sized by the plan's settings, which
+  // also spread the seats along the curve.
   PaletteItem.quarterCircleTable => SeatLayout(
-    custom: [
-      for (final degrees in [30, 60])
-        Offset.fromDirection(degrees * math.pi / 180, 4.55) -
-            const Offset(2, 2),
-    ],
+    custom: quarterCircleSeats(QuarterCircleCorner.bottomRight, 4, 2),
   ),
   _ => const SeatLayout(),
 };

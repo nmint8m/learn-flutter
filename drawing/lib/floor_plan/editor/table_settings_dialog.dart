@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// One value in a [showTableSettingsDialog], in meters.
+/// One value in a [showTableSettingsDialog], in the dialog's unit.
 typedef TableSetting = ({
   String key,
   String label,
@@ -9,8 +9,8 @@ typedef TableSetting = ({
 });
 
 /// Asks for a table type's settings (e.g. a bar seat's width and depth), in
-/// meters, each within its range. Returns the new values by [TableSetting.key],
-/// or null if cancelled.
+/// [unit] (meters by default), each within its range. Returns the new values
+/// by [TableSetting.key], in that unit, or null if cancelled.
 ///
 /// The fields are keyed `<keyPrefix>-<key>` and the Apply button
 /// `<keyPrefix>-save`.
@@ -20,6 +20,7 @@ Future<Map<String, double>?> showTableSettingsDialog(
   required String description,
   required String keyPrefix,
   required List<TableSetting> settings,
+  String unit = 'm',
 }) => showDialog(
   context: context,
   builder: (context) => _TableSettingsDialog(
@@ -27,6 +28,7 @@ Future<Map<String, double>?> showTableSettingsDialog(
     description: description,
     keyPrefix: keyPrefix,
     settings: settings,
+    unit: unit,
   ),
 );
 
@@ -36,12 +38,14 @@ class _TableSettingsDialog extends StatefulWidget {
     required this.description,
     required this.keyPrefix,
     required this.settings,
+    required this.unit,
   });
 
   final String title;
   final String description;
   final String keyPrefix;
   final List<TableSetting> settings;
+  final String unit;
 
   @override
   State<_TableSettingsDialog> createState() => _TableSettingsDialogState();
@@ -54,8 +58,8 @@ class _TableSettingsDialogState extends State<_TableSettingsDialog> {
   };
   final _errors = <String, String?>{};
 
-  static String _format(double meters) {
-    final rounded = (meters * 100).roundToDouble() / 100;
+  static String _format(double value) {
+    final rounded = (value * 100).roundToDouble() / 100;
     return rounded == rounded.roundToDouble()
         ? '${rounded.toInt()}'
         : '$rounded';
@@ -79,7 +83,8 @@ class _TableSettingsDialogState extends State<_TableSettingsDialog> {
         );
         final (min, max) = s.range;
         if (value == null || value < min - 1e-9 || value > max + 1e-9) {
-          _errors[s.key] = 'Enter ${_format(min)} to ${_format(max)} m';
+          _errors[s.key] =
+              'Enter ${_format(min)} to ${_format(max)} ${widget.unit}';
         } else {
           _errors[s.key] = null;
           values[s.key] = value;
@@ -114,9 +119,10 @@ class _TableSettingsDialogState extends State<_TableSettingsDialog> {
                   ),
                   decoration: InputDecoration(
                     labelText: s.label,
-                    suffixText: 'm',
+                    suffixText: widget.unit,
                     helperText:
-                        '${_format(s.range.$1)} to ${_format(s.range.$2)} m',
+                        '${_format(s.range.$1)} to ${_format(s.range.$2)} '
+                        '${widget.unit}',
                     errorText: _errors[s.key],
                     border: const OutlineInputBorder(),
                   ),
