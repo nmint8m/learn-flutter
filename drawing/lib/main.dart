@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'floor_plan/floor_plan_page.dart';
+import 'floor_plan/floor_maps_page.dart';
 import 'geometry/geometry_shape.dart';
 
 void main() {
@@ -15,12 +15,12 @@ class DrawingApp extends StatelessWidget {
     return MaterialApp(
       title: 'Drawing',
       theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
-      home: const FloorPlanPage(actions: [_OpenGalleryButton()]),
+      home: const FloorMapsPage(actions: [_OpenGalleryButton()]),
     );
   }
 }
 
-/// Opens the shape gallery from the floor plan's app bar.
+/// Opens the shape gallery from the landing page's app bar.
 class _OpenGalleryButton extends StatelessWidget {
   const _OpenGalleryButton();
 

@@ -6,6 +6,7 @@ import 'package:drawing/floor_plan/editor/palette.dart';
 import 'package:drawing/floor_plan/floor_plan.dart';
 import 'package:drawing/floor_plan/floor_plan_page.dart';
 import 'package:drawing/floor_plan/floor_plan_store.dart';
+import 'package:drawing/floor_plan/floor_plan_view.dart';
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -98,7 +99,8 @@ void main() {
 
     // Step 1: room & decor.
     // The step bar and the panel heading.
-    expect(find.text('Room & Decor'), findsNWidgets(2));
+    expect(find.text('Room & decor'), findsOneWidget);
+    expect(find.text('Room & Decor'), findsOneWidget);
     expect(find.byKey(const ValueKey('save')), findsOneWidget);
     expect(palette('wall'), findsOneWidget);
     expect(palette('window'), findsOneWidget);
@@ -111,10 +113,53 @@ void main() {
     expect(palette('quarterCircleTable'), findsOneWidget);
     expect(palette('semicircleTable'), findsNothing);
 
-    // Step 3: no panel.
+    // Steps 3 and 4: no panel.
+    await goToStep(tester, 'tableConfiguration');
+    expect(palette('wall'), findsNothing);
+    expect(palette('circleTable'), findsNothing);
     await goToStep(tester, 'review');
     expect(palette('wall'), findsNothing);
     expect(palette('circleTable'), findsNothing);
+  });
+
+  testWidgets('Table configuration: tap a table to edit it, but not move it', (
+    tester,
+  ) async {
+    await openPage(tester);
+    await goToStep(tester, 'tableConfiguration');
+    expect(find.text('Table configuration'), findsOneWidget);
+
+    // Tables at 100%, the room at 30%, as in Table & seat.
+    final view = tester.widget<FloorPlanView>(find.byType(FloorPlanView));
+    expect(view.dimTables, isFalse);
+    expect(view.roomOpacity, 0.3);
+
+    final table = find.byKey(const ValueKey('table-T1'));
+    await tester.tapAt(tester.getCenter(table));
+    await settle(tester);
+
+    // The Edit panel opens; Edit and Save work, the rest are disabled.
+    expect(find.byKey(const ValueKey('item-name')), findsOneWidget);
+    for (final (key, enabled) in [
+      ('edit', true),
+      ('save-item', true),
+      ('move', false),
+      ('duplicate', false),
+      ('remove-item', false),
+    ]) {
+      final button = tester.widget<ButtonStyleButton>(
+        find.byKey(ValueKey(key)),
+      );
+      expect(button.onPressed != null, enabled, reason: key);
+    }
+
+    // A double tap doesn't start moving it.
+    final before = tester.getCenter(table);
+    await tester.tapAt(before);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(before);
+    await settle(tester);
+    expect(find.byKey(const ValueKey('moving-badge')), findsNothing);
   });
 
   testWidgets('the table state legend is gone', (tester) async {

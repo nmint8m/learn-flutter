@@ -12,18 +12,26 @@ import 'floor_plan.dart';
 import 'floor_plan_store.dart';
 import 'floor_plan_view.dart';
 
-/// The floor designer: a 3-step bar and Save in the app bar, the design panel
+/// The floor designer: a 4-step bar and Save in the app bar, the design panel
 /// on the left, the floor in the middle, and an edit side bar on the right.
 ///
-///   1. Room & Decor: add walls, doors, windows, plants and fixtures, and
+///   1. Room & decor: add walls, doors, windows, plants and fixtures, and
 ///      select them to move or rename.
-///   2. Table & Seat: the same for tables.
-///   3. Review: no panel, and items can't be changed; only zoom and pan.
+///   2. Table & seat: the same for tables.
+///   3. Table configuration: no panel, and the room at 30% opacity, but
+///      tapping a table opens its Edit panel. Tables can't be
+///      moved, duplicated or removed.
+///   4. Review: no panel, and items can't be changed; only zoom and pan.
+///
+/// A [viewOnly] page opens on Review and stays there: steps 1 and 2 are
+/// disabled and there's no Save.
 class FloorPlanPage extends StatefulWidget {
   const FloorPlanPage({
     super.key,
     this.repository = const JsonFileFloorPlanRepository(),
     this.actions = const [],
+    this.viewOnly = false,
+    this.mapName,
   });
 
   /// Where the plan is loaded from and saved to.
@@ -31,6 +39,12 @@ class FloorPlanPage extends StatefulWidget {
 
   /// Extra app bar buttons, shown before Save.
   final List<Widget> actions;
+
+  /// Only step 3, Review, can be used.
+  final bool viewOnly;
+
+  /// Shown in the app bar, before the steps.
+  final String? mapName;
 
   @override
   State<FloorPlanPage> createState() => _FloorPlanPageState();
@@ -44,7 +58,12 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   /// loaded plan is shown.
   FloorPlan? _edited;
 
-  DesignStep _step = DesignStep.roomAndDecor;
+  late DesignStep _step = widget.viewOnly
+      ? DesignStep.review
+      : DesignStep.roomAndDecor;
+
+  bool _stepEnabled(DesignStep step) =>
+      !widget.viewOnly || step == DesignStep.review;
   FloorItemRef? _selected;
 
   /// The floor's zoom and pan, shared with the zoom buttons.
@@ -99,6 +118,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   void _change(FloorPlan plan) => setState(() => _edited = stickOpenings(plan));
 
   void _goToStep(DesignStep step) {
+    if (!_stepEnabled(step)) return;
     setState(() {
       _step = step;
       _selected = null;
@@ -106,9 +126,9 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
       _confirmingRemove = null;
       _editing = false;
     });
-    // Review shows the whole floor, fitted to the screen: after the next
-    // layout, as hiding the panel and rulers changes the view's size.
-    if (step == DesignStep.review) {
+    // Steps without a panel show the whole floor, fitted to the screen:
+    // after the next layout, as hiding the panel changes the view's size.
+    if (step.section == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _view.fit());
     }
   }
@@ -117,7 +137,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   /// (outer walls have nothing to edit: they're only selected). A tap on
   /// empty floor clears the selection.
   void _onFloorTap(FloorPlan plan, Offset at) {
-    final hit = hitTestItem(plan, at, tables: _step == DesignStep.tableAndSeat);
+    final hit = hitTestItem(plan, at, tables: _step.selectsTables);
     setState(() {
       _selected = hit;
       _moving = false;
@@ -133,7 +153,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
   /// is selected; on another item, that item starts moving instead. A
   /// double tap on the item already being moved keeps it moving.
   void _onFloorDoubleTap(FloorPlan plan, Offset at) {
-    final hit = hitTestItem(plan, at, tables: _step == DesignStep.tableAndSeat);
+    final hit = hitTestItem(plan, at, tables: _step.selectsTables);
     final active = _selected != null && (_editing || _moving);
     if (hit != null && hit == _selected && _moving) return;
     if (active && hit != _selected) _save(_edited ?? plan);
@@ -535,18 +555,44 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         return Scaffold(
           appBar: AppBar(
             centerTitle: true,
-            title: StepProgress(current: _step, onStepTapped: _goToStep),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.mapName case final name?) ...[
+                  Flexible(
+                    child: Text(
+                      name,
+                      key: const ValueKey('map-title'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+                ],
+                Flexible(
+                  flex: 3,
+                  child: StepProgress(
+                    current: _step,
+                    onStepTapped: _goToStep,
+                    isEnabled: _stepEnabled,
+                  ),
+                ),
+              ],
+            ),
             actions: [
               ...widget.actions,
-              Padding(
-                padding: const EdgeInsets.only(left: 8, right: 12),
-                child: FilledButton.icon(
-                  key: const ValueKey('save'),
-                  onPressed: plan == null || _saving ? null : () => _save(plan),
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
+              if (!widget.viewOnly)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 12),
+                  child: FilledButton.icon(
+                    key: const ValueKey('save'),
+                    onPressed: plan == null || _saving
+                        ? null
+                        : () => _save(plan),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save'),
+                  ),
                 ),
-              ),
             ],
           ),
           // On narrow screens the panel slides in from the left (the app bar
@@ -582,8 +628,10 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
 
   Widget _buildEditor(FloorPlan plan, bool wide) {
     final section = _step.section;
-    final selected = _step.editable && _selected != null ? _selected : null;
+    final selected = _step.selectable && _selected != null ? _selected : null;
     final selectedExists = selected != null && itemExists(plan, selected);
+    // Move, Duplicate and Remove: not in Table configuration.
+    final canChange = selectedExists && _step.editable;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -610,7 +658,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   title: selectedExists ? _selectionTitle(plan, selected) : '',
                   moving: _moving,
                   editing: _editing,
-                  onMove: selectedExists
+                  onMove: canChange
                       ? () => setState(() => _moving = !_moving)
                       : null,
                   onEdit: selectedExists && canRename(selected)
@@ -619,11 +667,11 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                           _moving = false;
                         })
                       : null,
-                  onDuplicate: selectedExists && canDuplicateOrRemove(selected)
+                  onDuplicate: canChange && canDuplicateOrRemove(selected)
                       ? () => _duplicateSelected(_edited ?? plan, selected)
                       : null,
                   onSave: selectedExists && !_saving ? () => _save(plan) : null,
-                  onRemove: selectedExists && canDuplicateOrRemove(selected)
+                  onRemove: canChange && canDuplicateOrRemove(selected)
                       ? () => setState(() {
                           _confirmingRemove = _confirmingRemove == selected
                               ? null
@@ -645,7 +693,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   child: FloorPlanView(
                     plan: plan,
                     selected: selectedExists ? selected : null,
-                    onFloorTap: _step.editable && !_moving
+                    onFloorTap: _step.selectable && !_moving
                         ? (at) => _onFloorTap(plan, at)
                         : null,
                     // Also in move mode: a double tap lets go of the item
@@ -707,13 +755,13 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                       _draggedEnd = null;
                       _openingDragPoint = null;
                     },
-                    // Each step fades the other step's items to 30%
-                    // opacity (its own stay at 100%; Review shows all at
-                    // 100%): tables in step 1, the room's walls, doors,
-                    // windows and fixtures in step 2. The rulers show in
-                    // every step.
+                    // Steps 1 and 2 fade the other step's items to 30%
+                    // opacity (their own stay at 100%): tables in step 1,
+                    // the room's walls, doors, windows and fixtures in
+                    // step 2. Step 3 fades the room to 30% too; Review shows
+                    // everything at 100%. The rulers show in every step.
                     dimTables: _step == DesignStep.roomAndDecor,
-                    dimRoom: _step == DesignStep.tableAndSeat,
+                    roomOpacity: _step.selectsTables ? 0.3 : 1,
                     showRulers: true,
                     controller: _view,
                   ),
@@ -919,6 +967,7 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         '${switch (_step) {
           DesignStep.roomAndDecor => 'tap a wall, door, window or fixture to edit it, double-tap to move it',
           DesignStep.tableAndSeat => 'tap a table to edit it, double-tap to move it',
+          DesignStep.tableConfiguration => 'tap a table to configure it: tables can\'t be moved here',
           DesignStep.review => 'review only: items can\'t be changed',
         }}';
   }

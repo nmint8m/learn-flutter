@@ -94,7 +94,7 @@ class FloorPlanView extends StatefulWidget {
     this.onSelectedDrag,
     this.onSelectedDragEnd,
     this.dimTables = false,
-    this.dimRoom = false,
+    this.roomOpacity = 1,
     this.showRulers = false,
     this.controller,
   });
@@ -134,9 +134,9 @@ class FloorPlanView extends StatefulWidget {
   /// the room.
   final bool dimTables;
 
-  /// Draws the room's walls, doors, windows and fixtures at 30% opacity,
-  /// e.g. while placing tables. The floor and grid stay as they are.
-  final bool dimRoom;
+  /// The opacity of the room's walls, doors, windows, plants and fixtures,
+  /// e.g. 30% while placing tables. The floor and grid stay as they are.
+  final double roomOpacity;
 
   /// Shows rulers in meters along the top and left edges. They stay in
   /// place while zooming and panning, and their marks follow the floor.
@@ -197,7 +197,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :onSelectedDrag,
       :onSelectedDragEnd,
       :dimTables,
-      :dimRoom,
+      :roomOpacity,
       :showRulers,
     ) = widget;
     final moving = onSelectedDrag != null;
@@ -348,7 +348,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         floorColor: colors.surface,
                         highlightColor: colors.primary,
                         onHighlightColor: colors.onPrimary,
-                        roomOpacity: dimRoom ? _dimmed : 1,
+                        roomOpacity: roomOpacity,
                       ),
                     ),
                   ),
@@ -364,7 +364,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         ),
                         pixelsPerUnit: pixelsPerUnit,
                         selected: selected == ElementRef(index),
-                        opacity: dimRoom ? _dimmed : 1,
+                        opacity: roomOpacity,
                       ),
                   for (final table in plan.tables)
                     _TableWidget(

@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'palette.dart';
 
-/// The three steps of designing a floor.
+/// The four steps of designing a floor.
 enum DesignStep {
-  roomAndDecor('Room & Decor'),
-  tableAndSeat('Table & Seat'),
+  roomAndDecor('Room & decor'),
+  tableAndSeat('Table & seat'),
+  tableConfiguration('Table configuration'),
   review('Review');
 
   const DesignStep(this.label);
@@ -16,24 +17,38 @@ enum DesignStep {
   PaletteSection? get section => switch (this) {
     roomAndDecor => PaletteSection.roomAndDecor,
     tableAndSeat => PaletteSection.tableAndSeat,
-    review => null,
+    tableConfiguration || review => null,
   };
 
-  /// Whether items can be added, selected, moved and edited.
-  bool get editable => this != review;
+  /// Whether items can be added, moved, duplicated and removed.
+  bool get editable => this == roomAndDecor || this == tableAndSeat;
+
+  /// Whether tapping an item selects it and opens its Edit panel.
+  bool get selectable => this != review;
+
+  /// Whether the items tapped are tables (else walls, doors, windows and
+  /// fixtures).
+  bool get selectsTables => this == tableAndSeat || this == tableConfiguration;
 }
 
 /// The step bar in the app bar: numbered steps joined by lines. Tap a step to
-/// switch to it.
+/// switch to it. Steps that aren't [isEnabled] are greyed out and can't be
+/// tapped.
 class StepProgress extends StatelessWidget {
   const StepProgress({
     super.key,
     required this.current,
     required this.onStepTapped,
+    this.isEnabled,
   });
 
   final DesignStep current;
   final ValueChanged<DesignStep> onStepTapped;
+
+  /// Whether a step can be tapped. Null means every step can.
+  final bool Function(DesignStep step)? isEnabled;
+
+  bool _enabled(DesignStep step) => isEnabled?.call(step) ?? true;
 
   @override
   Widget build(BuildContext context) {
@@ -60,13 +75,14 @@ class StepProgress extends StatelessWidget {
                   ),
                 _StepChip(
                   step: step,
+                  // A disabled step shows its number, not a done tick.
                   state: step == current
                       ? _StepState.current
-                      : step.index < current.index
+                      : step.index < current.index && _enabled(step)
                       ? _StepState.done
                       : _StepState.upcoming,
                   showLabel: !compact || step == current,
-                  onTap: () => onStepTapped(step),
+                  onTap: _enabled(step) ? () => onStepTapped(step) : null,
                 ),
               ],
             ],
@@ -90,7 +106,9 @@ class _StepChip extends StatelessWidget {
   final DesignStep step;
   final _StepState state;
   final bool showLabel;
-  final VoidCallback onTap;
+
+  /// Null when the step is disabled.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -98,8 +116,9 @@ class _StepChip extends StatelessWidget {
     final colors = theme.colorScheme;
     final filled = state != _StepState.upcoming;
 
-    return Semantics(
+    final chip = Semantics(
       button: true,
+      enabled: onTap != null,
       selected: state == _StepState.current,
       label: 'Step ${step.index + 1}: ${step.label}',
       excludeSemantics: true,
@@ -146,5 +165,6 @@ class _StepChip extends StatelessWidget {
         ),
       ),
     );
+    return onTap == null ? Opacity(opacity: 0.38, child: chip) : chip;
   }
 }
