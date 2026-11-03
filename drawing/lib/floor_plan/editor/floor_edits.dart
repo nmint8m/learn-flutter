@@ -574,7 +574,8 @@ const duplicateOffsetMeters = 0.2;
 /// Removing an element shifts the [ElementRef] index of every element after
 /// it, so clear any selection afterwards.
 FloorPlan removeItem(FloorPlan plan, FloorItemRef ref) => switch (ref) {
-  TableRef(:final id) => plan.copyWith(
+  // It leaves its group of linked tables too.
+  TableRef(:final id) => unlinkTable(plan, id).copyWith(
     tables: [
       for (final t in plan.tables)
         if (t.id != id) t,
@@ -682,6 +683,116 @@ FloorPlan renameItem(FloorPlan plan, FloorItemRef ref, String name) {
     case OutlineEdgeRef():
       return plan; // Outer walls have no name.
   }
+}
+
+/// [plan] with a table's Table configuration changed: how many seats can be
+/// added to it, and whether it can be linked with others.
+FloorPlan configureTable(
+  FloorPlan plan,
+  FloorItemRef ref, {
+  int? extendableSeats,
+  bool? expandLinking,
+}) {
+  if (ref is! TableRef) return plan;
+  return plan.copyWith(
+    tables: [
+      for (final t in plan.tables)
+        t.id == ref.id
+            ? t.copyWith(
+                extendableSeats: extendableSeats?.clamp(
+                  0,
+                  FloorTable.maxExtendableSeats,
+                ),
+                expandLinking: expandLinking,
+              )
+            : t,
+    ],
+  );
+}
+
+/// The group of linked tables [id] is in, or null.
+TableGroup? tableGroupOf(FloorPlan plan, String id) {
+  for (final group in plan.tableGroups) {
+    if (group.tableIds.contains(id)) return group;
+  }
+  return null;
+}
+
+/// The number in a group's name, e.g. 3 for `GR-3`, or 0.
+int _groupNumber(TableGroup group) =>
+    int.tryParse(group.name.replaceFirst('GR-', '')) ?? 0;
+
+/// The name for a new group: `GR-` and one more than the highest number.
+String nextGroupName(FloorPlan plan) =>
+    'GR-${plan.tableGroups.fold(0, (n, g) => math.max(n, _groupNumber(g))) + 1}';
+
+/// [plan] with [id] linked with the tables in [others]: they all end up in
+/// one group. Any group they're already in joins it (keeping the name of
+/// the lowest numbered one); with none, it's a new group named
+/// [nextGroupName].
+FloorPlan linkTables(FloorPlan plan, String id, Set<String> others) {
+  final ids = {id, ...others}.where((t) => plan.tableById(t) != null).toSet();
+  if (ids.length < 2) return plan;
+  final joined = [
+    for (final g in plan.tableGroups)
+      if (g.tableIds.any(ids.contains)) g,
+  ]..sort((a, b) => _groupNumber(a).compareTo(_groupNumber(b)));
+  final members = <String>{for (final g in joined) ...g.tableIds, ...ids};
+  final group = TableGroup(
+    name: joined.isEmpty ? nextGroupName(plan) : joined.first.name,
+    // In the floor's table order.
+    tableIds: [
+      for (final t in plan.tables)
+        if (members.contains(t.id)) t.id,
+    ],
+  );
+  return plan.copyWith(
+    tableGroups: [
+      for (final g in plan.tableGroups)
+        if (identical(g, joined.firstOrNull))
+          group
+        else if (!joined.contains(g))
+          g,
+      if (joined.isEmpty) group,
+    ],
+  );
+}
+
+/// [plan] with [id] out of its group of linked tables. A group left with
+/// one table is gone.
+FloorPlan unlinkTable(FloorPlan plan, String id) {
+  final group = tableGroupOf(plan, id);
+  if (group == null) return plan;
+  final rest = [
+    for (final t in group.tableIds)
+      if (t != id) t,
+  ];
+  return plan.copyWith(
+    tableGroups: [
+      for (final g in plan.tableGroups)
+        if (!identical(g, group))
+          g
+        else if (rest.length >= 2)
+          TableGroup(name: g.name, tableIds: rest),
+    ],
+  );
+}
+
+/// Compares table names the way people read them: letters ignoring case,
+/// and numbers by value, so "A2" comes before "A10".
+int compareTableNames(String a, String b) {
+  final parts = RegExp(r'\d+|\D+');
+  final pa = parts.allMatches(a.toLowerCase()).map((m) => m[0]!).toList();
+  final pb = parts.allMatches(b.toLowerCase()).map((m) => m[0]!).toList();
+  for (var i = 0; i < pa.length && i < pb.length; i++) {
+    final na = int.tryParse(pa[i]);
+    final nb = int.tryParse(pb[i]);
+    final c = na != null && nb != null
+        ? na.compareTo(nb)
+        : pa[i].compareTo(pb[i]);
+    if (c != 0) return c;
+  }
+  return pa.length.compareTo(pb.length);
 }
 
 /// The item's current name, or '' if it has none.

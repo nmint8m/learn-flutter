@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../geometry/geometry_shape.dart';
+import '../floor_plan.dart' show FloorTable;
 import 'floor_edits.dart'
     show
         SeatSide,
@@ -14,6 +15,16 @@ import 'floor_edits.dart'
         minSeatsPerLongSide,
         quarterCircleArc,
         quarterCircleSeatAngle;
+
+/// A table's seats and its Table configuration, for the Edit panel. [group]
+/// is the group of linked tables it's in, if any: its name and the other
+/// tables in it, by id and name.
+typedef TableConfiguration = ({
+  int seats,
+  int extendableSeats,
+  bool expandLinking,
+  ({String name, List<({String id, String name})> tables})? group,
+});
 
 /// The right side bar for editing the selected item's name.
 ///
@@ -51,6 +62,11 @@ class EditSidebar extends StatefulWidget {
     this.quarterCircleCorner,
     this.quarterCircleRadii = const {},
     this.onQuarterCircleSeatsChanged,
+    this.configuration,
+    this.onExtendableSeatsChanged,
+    this.onExpandLinkingChanged,
+    this.onAddLinkedTables,
+    this.onUnlinkTable,
   });
 
   /// What the item is, e.g. "Table · circle".
@@ -118,6 +134,21 @@ class EditSidebar extends StatefulWidget {
   final Map<int, double> quarterCircleRadii;
   final ValueChanged<int>? onQuarterCircleSeatsChanged;
 
+  /// In the Table configuration step: the table's seats and its
+  /// configuration. The name and seats are then shown as text, not edited,
+  /// and only the configuration can be changed: the other fields (seats,
+  /// rotation...) are hidden. Null in the other steps.
+  final TableConfiguration? configuration;
+  final ValueChanged<int>? onExtendableSeatsChanged;
+  final ValueChanged<bool>? onExpandLinkingChanged;
+
+  /// Enabled only while Expand linking tables is on.
+  final VoidCallback? onAddLinkedTables;
+
+  /// The × on a linked table (given by id). Links are by group, so this
+  /// takes the selected table out of its group.
+  final ValueChanged<String>? onUnlinkTable;
+
   @override
   State<EditSidebar> createState() => _EditSidebarState();
 }
@@ -153,161 +184,167 @@ class _EditSidebarState extends State<EditSidebar> {
           ),
           Text(widget.kind, style: theme.textTheme.bodySmall),
           const SizedBox(height: 16),
-          TextField(
-            key: const ValueKey('item-name'),
-            controller: _controller,
-            // No autofocus: the keyboard only opens when the field is tapped.
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.done,
-            // Letters and digits only: "a 1!" becomes "a1", or "A1" in
-            // capitals.
-            textCapitalization: widget.capitalizeName
-                ? TextCapitalization.characters
-                : TextCapitalization.none,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
-              if (widget.capitalizeName) const _UpperCaseFormatter(),
-            ],
-            onChanged: widget.onNameChanged,
-            onSubmitted: (_) => widget.onClose(),
-          ),
-          if (widget.seatsPerSide case final seats?) ...[
-            const SizedBox(height: 24),
-            Text('Seats', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Tap a side to add or remove its seats.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            _SeatSidePicker(
-              seatsPerSide: seats,
-              square: widget.squareTable,
-              rectangleSeats: widget.rectangleSeats,
-              onChanged: (side, {required included}) =>
-                  widget.onSeatSideChanged?.call(side, included: included),
-            ),
-            if (widget.rectangleSeats case final counts?) ...[
-              const SizedBox(height: 16),
-              _RectangleSeatFields(
-                widthSide: counts.ends,
-                lengthSide: counts.long,
-                onChanged: (width, length) => widget.onRectangleSeatsChanged
-                    ?.call(ends: width, long: length),
+          if (widget.configuration case final config?)
+            ..._configurationFields(theme, config)
+          else ...[
+            TextField(
+              key: const ValueKey('item-name'),
+              controller: _controller,
+              // No autofocus: the keyboard only opens when the field is tapped.
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
               ),
-            ],
-          ],
-          if (widget.barSeats case final seats?) ...[
-            const SizedBox(height: 24),
-            Text('Seats', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            _BarPreview(seats: seats),
-            const SizedBox(height: 16),
-            _SeatCountField(
-              seats: seats,
-              onChanged: (n) => widget.onBarSeatsChanged?.call(n),
+              textInputAction: TextInputAction.done,
+              // Letters and digits only: "a 1!" becomes "a1", or "A1" in
+              // capitals.
+              textCapitalization: widget.capitalizeName
+                  ? TextCapitalization.characters
+                  : TextCapitalization.none,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
+                if (widget.capitalizeName) const _UpperCaseFormatter(),
+              ],
+              onChanged: widget.onNameChanged,
+              onSubmitted: (_) => widget.onClose(),
             ),
-          ],
-          if (widget.circleSeats case final seats?) ...[
-            const SizedBox(height: 24),
-            Text('Seats', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            _CirclePreview(seats: seats),
-            const SizedBox(height: 16),
-            _SeatCountDropdown(
-              keyName: 'circle-seats',
-              seats: seats,
-              radii: widget.circleRadii,
-              onChanged: (n) => widget.onCircleSeatsChanged?.call(n),
-            ),
-          ],
-          if ((widget.quarterCircleSeats, widget.quarterCircleCorner) case (
-            final seats?,
-            final corner?,
-          )) ...[
-            const SizedBox(height: 24),
-            Text('Seats', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            _QuarterCirclePreview(seats: seats, corner: corner),
-            const SizedBox(height: 16),
-            _SeatCountDropdown(
-              keyName: 'quarter-circle-seats',
-              seats: seats,
-              radii: widget.quarterCircleRadii,
-              onChanged: (n) => widget.onQuarterCircleSeatsChanged?.call(n),
-            ),
-          ],
-          if (widget.rotation case final rotation?) ...[
-            const SizedBox(height: 24),
-            _RotationField(
-              degrees: rotation,
-              onChanged: (value) => widget.onRotationChanged?.call(value),
-            ),
-          ],
-          if (widget.walls case final walls?) ...[
-            const SizedBox(height: 16),
-            // Rebuilt when the wall changes (e.g. after dragging the door
-            // onto another wall), so the shown choice stays current.
-            KeyedSubtree(
-              key: ValueKey(widget.wallId),
-              child: DropdownButtonFormField<String>(
-                key: const ValueKey('item-wall'),
-                initialValue: widget.wallId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Wall',
-                  helperText: 'Doors and windows always sit on a wall.',
-                  border: OutlineInputBorder(),
+            if (widget.seatsPerSide case final seats?) ...[
+              const SizedBox(height: 24),
+              Text('Seats', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                'Tap a side to add or remove its seats.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              _SeatSidePicker(
+                seatsPerSide: seats,
+                square: widget.squareTable,
+                rectangleSeats: widget.rectangleSeats,
+                onChanged: (side, {required included}) =>
+                    widget.onSeatSideChanged?.call(side, included: included),
+              ),
+              if (widget.rectangleSeats case final counts?) ...[
+                const SizedBox(height: 16),
+                _RectangleSeatFields(
+                  widthSide: counts.ends,
+                  lengthSide: counts.long,
+                  onChanged: (width, length) => widget.onRectangleSeatsChanged
+                      ?.call(ends: width, long: length),
                 ),
-                items: [
-                  for (final wall in walls)
-                    DropdownMenuItem(
-                      value: wall.id,
-                      child: Text(wall.name, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: (id) {
-                  if (id != null) widget.onWallChanged?.call(id);
-                },
+              ],
+            ],
+            if (widget.barSeats case final seats?) ...[
+              const SizedBox(height: 24),
+              Text('Seats', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 12),
+              _BarPreview(seats: seats),
+              const SizedBox(height: 16),
+              _SeatCountField(
+                seats: seats,
+                onChanged: (n) => widget.onBarSeatsChanged?.call(n),
               ),
-            ),
-          ],
-          if (widget.lengthMeters case final meters?) ...[
-            const SizedBox(height: 16),
-            _LengthField(
-              name: 'length',
-              meters: meters,
-              onChanged: (value) => widget.onLengthChanged?.call(value),
-            ),
-          ],
-          if (widget.sizeMeters case final size?) ...[
-            if (size.round) ...[
+            ],
+            if (widget.circleSeats case final seats?) ...[
+              const SizedBox(height: 24),
+              Text('Seats', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 12),
+              _CirclePreview(seats: seats),
+              const SizedBox(height: 16),
+              _SeatCountDropdown(
+                keyName: 'circle-seats',
+                seats: seats,
+                radii: widget.circleRadii,
+                onChanged: (n) => widget.onCircleSeatsChanged?.call(n),
+              ),
+            ],
+            if ((widget.quarterCircleSeats, widget.quarterCircleCorner) case (
+              final seats?,
+              final corner?,
+            )) ...[
+              const SizedBox(height: 24),
+              Text('Seats', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 12),
+              _QuarterCirclePreview(seats: seats, corner: corner),
+              const SizedBox(height: 16),
+              _SeatCountDropdown(
+                keyName: 'quarter-circle-seats',
+                seats: seats,
+                radii: widget.quarterCircleRadii,
+                onChanged: (n) => widget.onQuarterCircleSeatsChanged?.call(n),
+              ),
+            ],
+            if (widget.rotation case final rotation?) ...[
+              const SizedBox(height: 24),
+              _RotationField(
+                degrees: rotation,
+                onChanged: (value) => widget.onRotationChanged?.call(value),
+              ),
+            ],
+            if (widget.walls case final walls?) ...[
+              const SizedBox(height: 16),
+              // Rebuilt when the wall changes (e.g. after dragging the door
+              // onto another wall), so the shown choice stays current.
+              KeyedSubtree(
+                key: ValueKey(widget.wallId),
+                child: DropdownButtonFormField<String>(
+                  key: const ValueKey('item-wall'),
+                  initialValue: widget.wallId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Wall',
+                    helperText: 'Doors and windows always sit on a wall.',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final wall in walls)
+                      DropdownMenuItem(
+                        value: wall.id,
+                        child: Text(wall.name, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: (id) {
+                    if (id != null) widget.onWallChanged?.call(id);
+                  },
+                ),
+              ),
+            ],
+            if (widget.lengthMeters case final meters?) ...[
               const SizedBox(height: 16),
               _LengthField(
-                name: 'diameter',
-                meters: size.width,
-                max: widget.maxSizeMeters,
-                onChanged: (value) =>
-                    widget.onSizeChanged?.call(width: value, height: value),
+                name: 'length',
+                meters: meters,
+                onChanged: (value) => widget.onLengthChanged?.call(value),
               ),
-            ] else ...[
-              const SizedBox(height: 16),
-              _LengthField(
-                name: 'width',
-                meters: size.width,
-                max: widget.maxSizeMeters,
-                onChanged: (value) => widget.onSizeChanged?.call(width: value),
-              ),
-              const SizedBox(height: 16),
-              _LengthField(
-                name: 'height',
-                meters: size.height,
-                max: widget.maxSizeMeters,
-                onChanged: (value) => widget.onSizeChanged?.call(height: value),
-              ),
+            ],
+            if (widget.sizeMeters case final size?) ...[
+              if (size.round) ...[
+                const SizedBox(height: 16),
+                _LengthField(
+                  name: 'diameter',
+                  meters: size.width,
+                  max: widget.maxSizeMeters,
+                  onChanged: (value) =>
+                      widget.onSizeChanged?.call(width: value, height: value),
+                ),
+              ] else ...[
+                const SizedBox(height: 16),
+                _LengthField(
+                  name: 'width',
+                  meters: size.width,
+                  max: widget.maxSizeMeters,
+                  onChanged: (value) =>
+                      widget.onSizeChanged?.call(width: value),
+                ),
+                const SizedBox(height: 16),
+                _LengthField(
+                  name: 'height',
+                  meters: size.height,
+                  max: widget.maxSizeMeters,
+                  onChanged: (value) =>
+                      widget.onSizeChanged?.call(height: value),
+                ),
+              ],
             ],
           ],
           const SizedBox(height: 8),
@@ -317,6 +354,130 @@ class _EditSidebarState extends State<EditSidebar> {
           ),
         ],
       ),
+    );
+  }
+}
+
+extension on _EditSidebarState {
+  /// The Table configuration step's fields: the name and seats as text,
+  /// extendable seats, and linking.
+  List<Widget> _configurationFields(
+    ThemeData theme,
+    TableConfiguration config,
+  ) => [
+    // Side by side. With extendable seats the total is a range: 8 seats
+    // and 2 extendable read "8 - 10".
+    Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: _ReadOnlyValue(
+            keyName: 'item-name-text',
+            label: 'Name',
+            value: widget.name,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _ReadOnlyValue(
+            keyName: 'item-seats-text',
+            label: 'Total seats',
+            value: config.extendableSeats > 0
+                ? '${config.seats} - ${config.seats + config.extendableSeats}'
+                : '${config.seats}',
+          ),
+        ),
+      ],
+    ),
+    const SizedBox(height: 24),
+    _SeatCountField(
+      keyName: 'extendable-seats',
+      label: 'Extendable seats',
+      helper: '0 to ${FloorTable.maxExtendableSeats}',
+      seats: config.extendableSeats,
+      min: 0,
+      max: FloorTable.maxExtendableSeats,
+      onChanged: (n) => widget.onExtendableSeatsChanged?.call(n),
+    ),
+    const SizedBox(height: 16),
+    CheckboxListTile(
+      key: const ValueKey('expand-linking'),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      value: config.expandLinking,
+      title: const Text('Expand linking tables'),
+      onChanged: (on) => widget.onExpandLinkingChanged?.call(on ?? false),
+    ),
+    const SizedBox(height: 8),
+    FilledButton.tonalIcon(
+      key: const ValueKey('add-linked-tables'),
+      onPressed: config.expandLinking ? widget.onAddLinkedTables : null,
+      icon: const Icon(Icons.link),
+      label: const Text('Add linked tables'),
+    ),
+    const SizedBox(height: 12),
+    // The group's other tables, wrapping onto more lines as needed.
+    if (config.group case final group?) ...[
+      Text(
+        group.name,
+        key: const ValueKey('table-group-name'),
+        style: theme.textTheme.titleSmall,
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        key: const ValueKey('linked-tables'),
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final table in group.tables)
+            InputChip(
+              key: ValueKey('linked-table-${table.id}'),
+              avatar: const Icon(Icons.table_restaurant_outlined, size: 18),
+              label: Text(table.name),
+              deleteIcon: const Icon(Icons.close, size: 18),
+              deleteButtonTooltipMessage: 'Unlink',
+              onDeleted: () => widget.onUnlinkTable?.call(table.id),
+            ),
+        ],
+      ),
+    ] else
+      Text('No linked tables', style: theme.textTheme.bodySmall),
+    const SizedBox(height: 16),
+  ];
+}
+
+/// A label with its value under it, as plain text: for values that can't be
+/// changed here.
+class _ReadOnlyValue extends StatelessWidget {
+  const _ReadOnlyValue({
+    required this.keyName,
+    required this.label,
+    required this.value,
+  });
+
+  final String keyName;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value.isEmpty ? '—' : value,
+          key: ValueKey(keyName),
+          style: theme.textTheme.titleMedium,
+        ),
+      ],
     );
   }
 }
@@ -871,12 +1032,28 @@ class _BarPreview extends StatelessWidget {
   }
 }
 
-/// A whole number of seats, 1 to [maxBarSeats]: type it, or use − and +.
+/// A whole number of seats, [min] to [max]: type it, or use − and +. By
+/// default a bar's seats, 1 to [maxBarSeats].
 class _SeatCountField extends StatefulWidget {
-  const _SeatCountField({required this.seats, required this.onChanged});
+  const _SeatCountField({
+    required this.seats,
+    required this.onChanged,
+    this.keyName = 'bar-seats',
+    this.label = 'Number of seats',
+    this.helper = 'Up to $maxBarSeats',
+    this.min = 1,
+    this.max = maxBarSeats,
+  });
 
   final int seats;
   final ValueChanged<int> onChanged;
+
+  /// The text field's key; − and + are keyed `<keyName>-minus` and `-plus`.
+  final String keyName;
+  final String label;
+  final String helper;
+  final int min;
+  final int max;
 
   @override
   State<_SeatCountField> createState() => _SeatCountFieldState();
@@ -904,8 +1081,8 @@ class _SeatCountFieldState extends State<_SeatCountField> {
 
   void _typed(String text) {
     final n = int.tryParse(text.trim());
-    if (n == null || n < 1 || n > maxBarSeats) {
-      setState(() => _error = 'Enter 1 to $maxBarSeats seats');
+    if (n == null || n < widget.min || n > widget.max) {
+      setState(() => _error = 'Enter ${widget.min} to ${widget.max} seats');
       return;
     }
     setState(() => _error = null);
@@ -913,7 +1090,7 @@ class _SeatCountFieldState extends State<_SeatCountField> {
   }
 
   void _step(int by) {
-    final n = (widget.seats + by).clamp(1, maxBarSeats);
+    final n = (widget.seats + by).clamp(widget.min, widget.max);
     setState(() {
       _error = null;
       _controller.text = '$n';
@@ -929,21 +1106,21 @@ class _SeatCountFieldState extends State<_SeatCountField> {
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: IconButton.outlined(
-            key: const ValueKey('bar-seats-minus'),
+            key: ValueKey('${widget.keyName}-minus'),
             tooltip: 'One seat fewer',
             icon: const Icon(Icons.remove),
-            onPressed: widget.seats > 1 ? () => _step(-1) : null,
+            onPressed: widget.seats > widget.min ? () => _step(-1) : null,
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: TextField(
-            key: const ValueKey('bar-seats'),
+            key: ValueKey(widget.keyName),
             controller: _controller,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
-              labelText: 'Number of seats',
-              helperText: 'Up to $maxBarSeats',
+              labelText: widget.label,
+              helperText: widget.helper,
               errorText: _error,
               errorMaxLines: 2,
               border: const OutlineInputBorder(),
@@ -955,10 +1132,10 @@ class _SeatCountFieldState extends State<_SeatCountField> {
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: IconButton.outlined(
-            key: const ValueKey('bar-seats-plus'),
+            key: ValueKey('${widget.keyName}-plus'),
             tooltip: 'One more seat',
             icon: const Icon(Icons.add),
-            onPressed: widget.seats < maxBarSeats ? () => _step(1) : null,
+            onPressed: widget.seats < widget.max ? () => _step(1) : null,
           ),
         ),
       ],

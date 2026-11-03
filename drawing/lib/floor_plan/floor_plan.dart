@@ -36,6 +36,7 @@ class FloorPlan {
     this.rectBuffer = defaultRectBuffer,
     this.circleRadii = defaultCircleRadii,
     this.quarterCircleRadii = defaultQuarterCircleRadii,
+    this.tableGroups = const [],
   });
 
   /// A bar slot's default width and depth, in meters, and the range they're
@@ -112,6 +113,10 @@ class FloorPlan {
 
   final List<FloorElement> elements;
   final List<FloorTable> tables;
+
+  /// Groups of linked tables, e.g. GR-1 with tables C1, C2 and C3. A table
+  /// is in at most one group, and a group has at least 2 tables.
+  final List<TableGroup> tableGroups;
 
   /// The space for one seat at every bar ([FloorTable.bar]), in meters: how
   /// much counter it gets ([barSlotWidth]) and how deep the counter is
@@ -248,7 +253,52 @@ class FloorPlan {
         throw FormatException('Two tables have the id "${table.id}"');
       }
     }
-    return plan;
+    return plan.copyWith(tableGroups: _tableGroups(json, ids));
+  }
+
+  /// The groups of linked tables, without unknown tables, tables already in
+  /// an earlier group, or groups left with fewer than 2 tables.
+  ///
+  /// Older plans listed each table's links instead (`"linkedTables"`): each
+  /// set of tables linked to each other becomes a group.
+  static List<TableGroup> _tableGroups(_Json json, Set<String> tableIds) {
+    final raw = <TableGroup>[
+      for (final g in json.objectList('tableGroups'))
+        TableGroup(name: g.string('name'), tableIds: g.stringList('tables')),
+    ];
+    if (raw.isEmpty) {
+      // Older plans: join linked tables, following links both ways.
+      final links = {
+        for (final t in json.objectList('tables'))
+          t.string('id'): t.stringList('linkedTables'),
+      };
+      final grouped = <String>{};
+      for (final start in links.keys) {
+        if (grouped.contains(start) || links[start]!.isEmpty) continue;
+        final group = <String>[];
+        final todo = [start];
+        while (todo.isNotEmpty) {
+          final id = todo.removeLast();
+          if (!tableIds.contains(id) || !grouped.add(id)) continue;
+          group.add(id);
+          todo.addAll(links[id] ?? const []);
+          for (final MapEntry(:key, :value) in links.entries) {
+            if (value.contains(id)) todo.add(key);
+          }
+        }
+        raw.add(TableGroup(name: 'GR-${raw.length + 1}', tableIds: group));
+      }
+    }
+    final used = <String>{};
+    return [
+      for (final g in raw)
+        if ([
+              for (final id in g.tableIds)
+                if (tableIds.contains(id) && used.add(id)) id,
+            ]
+            case final ids when ids.length >= 2)
+          TableGroup(name: g.name, tableIds: ids),
+    ];
   }
 
   /// A table setting in meters, e.g. `"barSlot": {"width": 0.6}`: the
@@ -277,6 +327,7 @@ class FloorPlan {
     double? rectBuffer,
     Map<int, double>? circleRadii,
     Map<int, double>? quarterCircleRadii,
+    List<TableGroup>? tableGroups,
   }) => FloorPlan(
     id: id,
     name: name,
@@ -295,6 +346,7 @@ class FloorPlan {
     rectBuffer: rectBuffer ?? this.rectBuffer,
     circleRadii: circleRadii ?? this.circleRadii,
     quarterCircleRadii: quarterCircleRadii ?? this.quarterCircleRadii,
+    tableGroups: tableGroups ?? this.tableGroups,
   );
 
   /// The plan as JSON, in the same format [parse] reads.
@@ -308,6 +360,8 @@ class FloorPlan {
     if (outline case final points?) 'outline': _points(points),
     'elements': [for (final e in elements) e.toJson()],
     'tables': [for (final t in tables) t.toJson()],
+    if (tableGroups.isNotEmpty)
+      'tableGroups': [for (final g in tableGroups) g.toJson()],
     if (barSlotWidth != defaultBarSlotWidth ||
         barSlotDepth != defaultBarSlotDepth)
       'barSlot': {'width': _num(barSlotWidth), 'depth': _num(barSlotDepth)},
@@ -345,6 +399,17 @@ class FloorPlan {
     }
     return null;
   }
+}
+
+/// Tables linked together, e.g. to seat a big group: GR-1 with C1, C2 and C3.
+class TableGroup {
+  const TableGroup({required this.name, required this.tableIds});
+
+  /// `GR-<number>`, e.g. `GR-1`.
+  final String name;
+  final List<String> tableIds;
+
+  Map<String, Object?> toJson() => {'name': name, 'tables': tableIds};
 }
 
 /// Which shape to draw, plus the options some shapes need. Shared by tables
@@ -709,7 +774,12 @@ class FloorTable {
     this.statusPerSeat = false,
     this.bar = false,
     this.square = false,
+    this.extendableSeats = 0,
+    this.expandLinking = false,
   });
+
+  /// The most seats that can be added to a table when needed.
+  static const maxExtendableSeats = 2;
 
   factory FloorTable._fromJson(_Json json) {
     final id = json.string('id');
@@ -734,6 +804,11 @@ class FloorTable {
             ShapeSpec._fromJson(inTable).shape == TableShape.roundedRect &&
             inTable.positiveNumber('width') == inTable.positiveNumber('height'),
       ),
+      extendableSeats: math.min(
+        inTable.count('extendableSeats'),
+        maxExtendableSeats,
+      ),
+      expandLinking: inTable.boolean('expandLinking', fallback: false),
     );
   }
 
@@ -765,6 +840,12 @@ class FloorTable {
   /// A square table: a rounded square with at most one seat per side.
   final bool square;
 
+  /// How many seats can be added when needed, 0 to [maxExtendableSeats].
+  final int extendableSeats;
+
+  /// Whether the table can be linked with others to seat a bigger group.
+  final bool expandLinking;
+
   /// Every seat, positioned relative to the table's center, before rotation.
   List<Seat> get seats => seatLayout.seatsFor(this);
 
@@ -777,6 +858,8 @@ class FloorTable {
     double? height,
     double? rotation,
     SeatLayout? seatLayout,
+    int? extendableSeats,
+    bool? expandLinking,
   }) => FloorTable(
     id: id ?? this.id,
     label: label ?? this.label,
@@ -790,6 +873,8 @@ class FloorTable {
     statusPerSeat: statusPerSeat,
     bar: bar,
     square: square,
+    extendableSeats: extendableSeats ?? this.extendableSeats,
+    expandLinking: expandLinking ?? this.expandLinking,
   );
 
   Map<String, Object?> toJson() => {
@@ -805,6 +890,8 @@ class FloorTable {
     if (statusPerSeat) 'statusPerSeat': true,
     if (bar) 'bar': true,
     if (square) 'square': true,
+    if (extendableSeats != 0) 'extendableSeats': extendableSeats,
+    if (expandLinking) 'expandLinking': true,
   };
 }
 
@@ -1008,6 +1095,14 @@ class _Json {
     if (value == null) return null;
     if (value is! Map<String, dynamic>) throw error('"$key" must be an object');
     return _Json(value, _context);
+  }
+
+  List<String> stringList(String key) {
+    final value = _map[key] ?? const [];
+    if (value is! List || value.any((v) => v is! String)) {
+      throw error('"$key" must be a list of strings');
+    }
+    return value.cast<String>();
   }
 
   List<_Json> objectList(String key) {

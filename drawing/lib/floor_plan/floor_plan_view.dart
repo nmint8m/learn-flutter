@@ -87,6 +87,7 @@ class FloorPlanView extends StatefulWidget {
     required this.plan,
     this.statusOf,
     this.selected,
+    this.linkedTableIds = const {},
     this.onFloorTap,
     this.onFloorDoubleTap,
     this.onItemDropped,
@@ -107,6 +108,11 @@ class FloorPlanView extends StatefulWidget {
 
   /// Drawn highlighted.
   final FloorItemRef? selected;
+
+  /// The other tables in the selected table's group of linked tables, drawn
+  /// with a lighter outline. When there are any, the selected table's own
+  /// outline is bolder.
+  final Set<String> linkedTableIds;
 
   /// Called with the tapped point, in floor units. Null ignores taps.
   final ValueChanged<Offset>? onFloorTap;
@@ -191,6 +197,7 @@ class _FloorPlanViewState extends State<FloorPlanView> {
       :plan,
       :statusOf,
       :selected,
+      :linkedTableIds,
       :onFloorTap,
       :onFloorDoubleTap,
       :onSelectedDragStart,
@@ -379,6 +386,8 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                       pixelsPerUnit: pixelsPerUnit,
                       statusOf: statusOf,
                       selected: selected == TableRef(table.id),
+                      inGroup: linkedTableIds.isNotEmpty,
+                      linked: linkedTableIds.contains(table.id),
                       opacity: dimTables ? _dimmed : 1,
                     ),
                   // On top of everything: the selected wall's highlight and its
@@ -1200,6 +1209,8 @@ class _TableWidget extends StatelessWidget {
     required this.pixelsPerUnit,
     required this.statusOf,
     required this.selected,
+    this.inGroup = false,
+    this.linked = false,
     this.opacity = 1,
   });
 
@@ -1215,6 +1226,13 @@ class _TableWidget extends StatelessWidget {
   /// Null draws the table in a neutral color.
   final TableStatus Function(String id)? statusOf;
   final bool selected;
+
+  /// Whether the selected table is in a group of linked tables: its outline
+  /// is then bolder.
+  final bool inGroup;
+
+  /// In the selected table's group: drawn with a lighter outline.
+  final bool linked;
 
   @override
   Widget build(BuildContext context) {
@@ -1302,8 +1320,21 @@ class _TableWidget extends StatelessWidget {
               fillColor: perSeat
                   ? Colors.transparent
                   : tableStatus?.color ?? colors.secondaryContainer,
-              borderColor: selected ? colors.primary : colors.outline,
-              borderWidth: math.max(1, (selected ? 0.15 : 0.06) * ppu),
+              borderColor: selected
+                  ? colors.primary
+                  : linked
+                  ? colors.primary.withValues(alpha: 0.45)
+                  : colors.outline,
+              borderWidth: math.max(
+                1,
+                switch ((selected, linked)) {
+                      (true, _) when inGroup => 0.24,
+                      (true, _) => 0.15,
+                      (_, true) => 0.12,
+                      _ => 0.06,
+                    } *
+                    ppu,
+              ),
               semanticLabel: perSeat
                   ? '${table.label}, ${_seatSummary(seats, statusOf)}'
                   : 'Table ${table.label}, ${seats.length} seats'

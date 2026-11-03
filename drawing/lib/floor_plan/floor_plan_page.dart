@@ -7,6 +7,7 @@ import 'editor/design_panel.dart';
 import 'editor/design_step.dart';
 import 'editor/edit_sidebar.dart';
 import 'editor/floor_edits.dart';
+import 'editor/link_tables_dialog.dart';
 import 'editor/palette.dart';
 import 'floor_plan.dart';
 import 'floor_plan_store.dart';
@@ -693,6 +694,14 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
                   child: FloorPlanView(
                     plan: plan,
                     selected: selectedExists ? selected : null,
+                    // Table configuration: the selected table's group.
+                    linkedTableIds: switch (selected) {
+                      TableRef(:final id)
+                          when selectedExists &&
+                              _step == DesignStep.tableConfiguration =>
+                        {...?tableGroupOf(plan, id)?.tableIds}..remove(id),
+                      _ => const {},
+                    },
                     onFloorTap: _step.selectable && !_moving
                         ? (at) => _onFloorTap(plan, at)
                         : null,
@@ -801,6 +810,39 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
               onClose: () => setState(() => _editing = false),
               // Table names are in capitals; room and decor names aren't.
               capitalizeName: selected is TableRef,
+              // Table configuration: the name and seats as text, and the
+              // table's extendable seats and linking.
+              configuration: switch (selected) {
+                TableRef(:final id)
+                    when _step == DesignStep.tableConfiguration =>
+                  switch (plan.tableById(id)) {
+                    final t? => (
+                      seats: t.seats.length,
+                      extendableSeats: t.extendableSeats,
+                      expandLinking: t.expandLinking,
+                      group: switch (tableGroupOf(plan, t.id)) {
+                        final g? => (
+                          name: g.name,
+                          tables: _tableNames(plan, [
+                            for (final other in g.tableIds)
+                              if (other != t.id) other,
+                          ]),
+                        ),
+                        null => null,
+                      },
+                    ),
+                    null => null,
+                  },
+                _ => null,
+              },
+              onExtendableSeatsChanged: (n) => _change(
+                configureTable(_edited ?? plan, selected, extendableSeats: n),
+              ),
+              onExpandLinkingChanged: (on) => _change(
+                configureTable(_edited ?? plan, selected, expandLinking: on),
+              ),
+              onAddLinkedTables: () => _addLinkedTables(plan, selected),
+              onUnlinkTable: (_) => _unlinkSelected(plan, selected),
               lengthMeters: itemLengthMeters(plan, selected),
               // Doors and windows: which wall they're on.
               walls: switch (selected) {
@@ -931,6 +973,107 @@ class _FloorPlanPageState extends State<FloorPlanPage> {
         ],
       ],
     );
+  }
+
+  /// The tables with these [ids], by id and name, sorted by name.
+  List<({String id, String name})> _tableNames(
+    FloorPlan plan,
+    Iterable<String> ids,
+  ) {
+    final wanted = ids.toSet();
+    return [
+      for (final t in plan.tables)
+        if (wanted.contains(t.id))
+          (id: t.id, name: t.label.isEmpty ? t.id : t.label),
+    ]..sort((a, b) => compareTableNames(a.name, b.name));
+  }
+
+  /// The table's name, or its id when it has none.
+  String _tableName(FloorPlan plan, String id) => switch (plan.tableById(id)) {
+    final t? when t.label.isNotEmpty => t.label,
+    _ => id,
+  };
+
+  /// A group with its tables, e.g. "GR-1 [C1, C2, C3]".
+  String _groupText(FloorPlan plan, TableGroup group) =>
+      '${group.name} [${_tableNames(plan, group.tableIds).map((t) => t.name).join(', ')}]';
+
+  /// Asks which tables to link the selected table with, from every other
+  /// table (its group's tables ticked), then applies the change:
+  ///   * unticking a table of its group takes the selected table out of the
+  ///     group, after asking;
+  ///   * ticking tables links them all in one group: a new one, or the group
+  ///     they (or it) are in. Joining another table's group asks first.
+  Future<void> _addLinkedTables(FloorPlan plan, FloorItemRef selected) async {
+    if (selected is! TableRef) return;
+    final id = selected.id;
+    final group = tableGroupOf(plan, id);
+    final members = {...?group?.tableIds}..remove(id);
+    final ticked = await showLinkTablesDialog(
+      context,
+      tableName: _tableName(plan, id),
+      tables: _tableNames(plan, [
+        for (final t in plan.tables)
+          if (t.id != id) t.id,
+      ]),
+      linked: members,
+    );
+    if (ticked == null || !mounted) return;
+
+    var current = _edited ?? plan;
+    if (members.difference(ticked).isNotEmpty) {
+      if (!await _confirmUnlink(current, id)) return;
+      current = unlinkTable(current, id);
+    }
+    final added = ticked.difference(members);
+    if (added.isNotEmpty) {
+      final own = tableGroupOf(current, id);
+      final others = {for (final t in added) tableGroupOf(current, t)}.nonNulls
+          .where((g) => !identical(g, own))
+          .toList();
+      if (others.isNotEmpty && mounted) {
+        final name = _tableName(current, id);
+        final groups = others.map((g) => _groupText(current, g)).join(' and ');
+        final ok = await confirmGroupChange(
+          context,
+          title: 'Link to group?',
+          message: own == null
+              ? 'Link $name to the group table $groups?'
+              : 'Join $name\'s group ${_groupText(current, own)} with the '
+                    'group table $groups?',
+          confirmLabel: 'Link',
+        );
+        if (!ok) {
+          // Keep an unlink that was already confirmed.
+          if (!identical(current, _edited ?? plan)) _change(current);
+          return;
+        }
+      }
+      current = linkTables(current, id, added);
+    }
+    if (mounted) _change(current);
+  }
+
+  /// Asks before taking the table [id] out of its group.
+  Future<bool> _confirmUnlink(FloorPlan plan, String id) async {
+    final group = tableGroupOf(plan, id);
+    if (group == null || !mounted) return false;
+    return confirmGroupChange(
+      context,
+      title: 'Unlink from group?',
+      message:
+          'Unlink ${_tableName(plan, id)} from the group table '
+          '${_groupText(plan, group)}?',
+      confirmLabel: 'Unlink',
+    );
+  }
+
+  /// The × on a linked table: takes the selected table out of its group,
+  /// after asking.
+  Future<void> _unlinkSelected(FloorPlan plan, FloorItemRef selected) async {
+    if (selected is! TableRef) return;
+    if (!await _confirmUnlink(_edited ?? plan, selected.id) || !mounted) return;
+    _change(unlinkTable(_edited ?? plan, selected.id));
   }
 
   String _selectionTitle(FloorPlan plan, FloorItemRef selected) {

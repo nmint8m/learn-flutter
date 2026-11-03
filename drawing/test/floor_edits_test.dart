@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show Rect;
 
@@ -810,5 +811,76 @@ void main() {
     expect(reread.tableById('T1')!.x, t1.x + 1);
     expect(reread.floorOutline, plan.floorOutline);
     expect(reread.tableById('BAR')!.statusPerSeat, isTrue);
+  });
+
+  group('linked table groups', () {
+    List<String>? groupOf(FloorPlan p, String id) =>
+        tableGroupOf(p, id)?.tableIds;
+
+    test('linking makes a group GR-1 that every member sees', () {
+      final p = linkTables(plan, 'T1', {'T2', 'T3'});
+      expect(p.tableGroups.single.name, 'GR-1');
+      expect(groupOf(p, 'T1'), ['T1', 'T2', 'T3']);
+      expect(groupOf(p, 'T2'), ['T1', 'T2', 'T3']);
+      expect(groupOf(p, 'T4'), isNull);
+    });
+
+    test('linking with a grouped table joins its group', () {
+      var p = linkTables(plan, 'T1', {'T2', 'T3'});
+      p = linkTables(p, 'T4', {'T1'});
+      expect(p.tableGroups, hasLength(1));
+      expect(groupOf(p, 'T4'), ['T1', 'T2', 'T3', 'T4']);
+    });
+
+    test('new groups count up; joining two keeps the lower name', () {
+      var p = linkTables(plan, 'T1', {'T2'});
+      p = linkTables(p, 'T3', {'T4'});
+      expect(p.tableGroups.map((g) => g.name), ['GR-1', 'GR-2']);
+      p = linkTables(p, 'T4', {'T1'});
+      expect(p.tableGroups.single.name, 'GR-1');
+      expect(groupOf(p, 'T3'), ['T1', 'T2', 'T3', 'T4']);
+    });
+
+    test('unlinking leaves the group; a group of one is gone', () {
+      var p = linkTables(plan, 'T1', {'T2', 'T3'});
+      p = unlinkTable(p, 'T3');
+      expect(groupOf(p, 'T3'), isNull);
+      expect(groupOf(p, 'T1'), ['T1', 'T2']);
+      p = unlinkTable(p, 'T2');
+      expect(p.tableGroups, isEmpty);
+    });
+
+    test('groups are saved', () {
+      final p = linkTables(plan, 'T1', {'T2'});
+      final loaded = FloorPlan.parse(p.encode());
+      expect(loaded.tableGroups.single.name, 'GR-1');
+      expect(groupOf(loaded, 'T2'), ['T1', 'T2']);
+    });
+
+    test('older per-table links load as groups', () {
+      final json = jsonDecode(plan.encode()) as Map<String, dynamic>;
+      for (final t in (json['tables'] as List).cast<Map<String, dynamic>>()) {
+        if (t['id'] == 'T1') t['linkedTables'] = ['T2'];
+        if (t['id'] == 'T3') t['linkedTables'] = ['T2'];
+      }
+      final loaded = FloorPlan.fromJson(json);
+      expect(loaded.tableGroups.single.name, 'GR-1');
+      expect(groupOf(loaded, 'T3')!.toSet(), {'T1', 'T2', 'T3'});
+    });
+
+    test('removing a table takes it out of its group; a copy is unlinked', () {
+      var p = linkTables(plan, 'T1', {'T2', 'T3'});
+      final (withCopy, copyRef) = duplicateItem(p, const TableRef('T1'))!;
+      expect(groupOf(withCopy, (copyRef as TableRef).id), isNull);
+
+      p = removeItem(p, const TableRef('T2'));
+      expect(groupOf(p, 'T1'), ['T1', 'T3']);
+    });
+
+    test('names sort by letters, then numbers by value', () {
+      final names = ['b2', 'A10', 'Bar', 'a2', '10', '9'];
+      names.sort(compareTableNames);
+      expect(names, ['9', '10', 'a2', 'A10', 'b2', 'Bar']);
+    });
   });
 }
