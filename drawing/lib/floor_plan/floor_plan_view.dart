@@ -373,6 +373,23 @@ class _FloorPlanViewState extends State<FloorPlanView> {
                         selected: selected == ElementRef(index),
                         opacity: roomOpacity,
                       ),
+                  // Under the tables: a pale circle under each table of the
+                  // selected table's group, the selected one included.
+                  if (linkedTableIds.isNotEmpty)
+                    for (final table in plan.tables)
+                      if (linkedTableIds.contains(table.id) ||
+                          selected == TableRef(table.id))
+                        _GroupCircle(
+                          key: ValueKey('group-circle-${table.id}'),
+                          table: table,
+                          center: toPixels(
+                            table.x,
+                            table.y,
+                            table.width,
+                            table.height,
+                          ).center,
+                          pixelsPerUnit: pixelsPerUnit,
+                        ),
                   for (final table in plan.tables)
                     _TableWidget(
                       key: ValueKey('table-${table.id}'),
@@ -1195,6 +1212,47 @@ class _MovingHighlight extends StatelessWidget {
               child: Icon(Icons.open_with, size: 16, color: colors.onPrimary),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A pale circle under a table of the selected table's group, wide enough
+/// for the table and its seats (at any rotation), with a little to spare.
+class _GroupCircle extends StatelessWidget {
+  const _GroupCircle({
+    super.key,
+    required this.table,
+    required this.center,
+    required this.pixelsPerUnit,
+  });
+
+  final FloorTable table;
+
+  /// The table's center, in pixels.
+  final Offset center;
+  final double pixelsPerUnit;
+
+  /// Room around the table and seats, in floor units.
+  static const _margin = 0.4;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    var reach = Offset(table.width, table.height).distance / 2;
+    for (final seat in table.seats) {
+      reach = math.max(reach, seat.offset.distance + SeatLayout.seatSize / 2);
+    }
+    final radius = (reach + _margin) * pixelsPerUnit;
+    return Positioned.fromRect(
+      rect: Rect.fromCircle(center: center, radius: radius),
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colors.primary.withValues(alpha: 0.12),
+          ),
         ),
       ),
     );

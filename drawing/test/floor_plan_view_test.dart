@@ -61,4 +61,63 @@ void main() {
     // Others: unchanged.
     expect(other.borderWidth, plain);
   });
+
+  testWidgets('a pale circle sits under the group, around its tables', (
+    tester,
+  ) async {
+    final circle = find.byKey(const ValueKey('table-group-circle'));
+    await show(tester);
+    expect(circle, findsNothing);
+
+    await show(tester, linkedTableIds: {'T2'});
+    expect(circle, findsOneWidget);
+    final box = tester.getRect(circle);
+    final center = box.center;
+    for (final id in ['T1', 'T2']) {
+      final table = tester.getRect(find.byKey(ValueKey('table-$id')));
+      for (final corner in [
+        table.topLeft,
+        table.topRight,
+        table.bottomLeft,
+        table.bottomRight,
+      ]) {
+        expect((corner - center).distance, lessThan(box.width / 2));
+      }
+    }
+
+    // Drawn before (under) the tables.
+    final stack = find.ancestor(of: circle, matching: find.byType(Stack)).first;
+    final children = tester.widget<Stack>(stack).children;
+    final circleAt = children.indexWhere(
+      (c) => find
+          .descendant(of: find.byWidget(c), matching: circle)
+          .evaluate()
+          .isNotEmpty,
+    );
+    final tableAt = children.indexWhere(
+      (c) => c.key == const ValueKey('table-T1'),
+    );
+    expect(circleAt, lessThan(tableAt));
+  });
+
+  testWidgets('a pale circle sits under each table of the group', (
+    tester,
+  ) async {
+    await show(tester);
+    expect(find.byKey(const ValueKey('group-circle-T1')), findsNothing);
+
+    await show(tester, linkedTableIds: {'T2'});
+    expect(find.byKey(const ValueKey('group-circle-T1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('group-circle-T2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('group-circle-T3')), findsNothing);
+
+    // Centered on the table, and big enough for it and its seats.
+    final circle = tester.getRect(
+      find.byKey(const ValueKey('group-circle-T2')),
+    );
+    final table = tester.getRect(find.byKey(const ValueKey('table-T2')));
+    expect(circle.center.dx, closeTo(table.center.dx, 0.5));
+    expect(circle.center.dy, closeTo(table.center.dy, 0.5));
+    expect(circle.width, greaterThan(table.longestSide));
+  });
 }
